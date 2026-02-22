@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PlexPreferCHTSubs"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Automatically set Traditional Chinese (繁體中文) as the preferred subtitle in Plex."
 readme = "README.md"
 license = "MIT"
@@ -37,6 +37,9 @@ Issues = "https://github.com/TubeBoyJimmy/PlexPreferCHTSubs/issues"
 
 [project.scripts]
 plexchtsubs = "plexchtsubs.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "plexchtsubs.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

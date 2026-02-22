@@ -7,7 +7,8 @@
 
 services:
   plexchtsubs:
-    build: .
+    image: plexchtsubs:latest
+    build: .                       # Only used with `docker compose build`
     container_name: plexchtsubs
     restart: unless-stopped
     volumes:
@@ -15,5 +16,6 @@ services:
         source: ./config.yaml
         target: /app/config.yaml
         read_only: true
+      - /etc/localtime:/etc/localtime:ro
     # Service mode: run on schedule (comment out for one-shot)
     command: ["--schedule"]

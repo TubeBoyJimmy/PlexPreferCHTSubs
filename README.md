@@ -145,12 +145,17 @@ Forced subtitles receive an additional -50 penalty.
 docker build -t plexchtsubs .
 ```
 
+### Setup / 設定
+
+Copy `config.example.yaml` to `config.yaml` in the same directory as `docker-compose.yml` and fill in your Plex URL and token.
+
+將 `config.example.yaml` 複製為 `config.yaml`（與 `docker-compose.yml` 同目錄），填入你的 Plex URL 和 token。
+
 ### One-shot scan / 單次掃描
 
 ```bash
 docker run --rm \
-  -e PLEX_URL=http://plex:32400 \
-  -e PLEX_TOKEN=your-token \
+  -v ./config.yaml:/app/config.yaml:ro \
   plexchtsubs --dry-run --scan-range 30
 ```
 
@@ -158,19 +163,26 @@ docker run --rm \
 
 ```bash
 # Using docker-compose (recommended)
-# Edit docker-compose.yml with your PLEX_TOKEN, then:
 docker compose up -d
 
-# Or run directly:
-docker run -d --restart unless-stopped \
-  -e PLEX_URL=http://plex:32400 \
-  -e PLEX_TOKEN=your-token \
-  --name plexchtsubs \
-  plexchtsubs --schedule --cron "0 3 * * *"
+# View logs
+docker compose logs -f
 ```
 
-Service mode runs the scan immediately on startup, then repeats on the cron schedule.
-常駐模式會在啟動時立刻執行一次掃描，之後按照 cron 排程定期執行。
+Service mode runs the scan immediately on startup, then repeats on the cron schedule (default: daily 03:00).
+常駐模式會在啟動時立刻執行一次掃描，之後按照 cron 排程定期執行（預設每天凌晨 3 點）。
+
+### Remote deployment / 遠端部署（NAS 等）
+
+```bash
+# On build machine
+docker build -t plexchtsubs .
+docker save plexchtsubs -o plexchtsubs.tar
+
+# Copy plexchtsubs.tar, docker-compose.yml, config.yaml to target machine, then:
+docker load -i plexchtsubs.tar
+docker compose up -d
+```
 
 ## Attribution / 致謝
 
