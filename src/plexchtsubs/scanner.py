@@ -7,7 +7,7 @@ import threading
 import time
 import concurrent.futures
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Union
 
 import requests
 from plexapi.server import PlexServer
@@ -33,6 +33,46 @@ _print_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
+# HTTP retry helper
+# ---------------------------------------------------------------------------
+
+def _put_with_retry(
+    url: str,
+    headers: dict,
+    *,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    timeout: float = 15.0,
+) -> requests.Response:
+    """PUT request with exponential backoff retry.
+
+    Retries on ConnectionError, Timeout, and HTTP 5xx.
+    Does NOT retry on 4xx (client error).
+    """
+    last_exc: Optional[Exception] = None
+    for attempt in range(max_retries + 1):
+        try:
+            resp = requests.put(url, headers=headers, timeout=timeout)
+            if resp.status_code < 500:
+                return resp
+            last_exc = requests.HTTPError(
+                f"HTTP {resp.status_code}", response=resp
+            )
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last_exc = e
+
+        if attempt < max_retries:
+            delay = base_delay * (2 ** attempt)
+            logger.warning(
+                "PUT %s failed (attempt %d/%d), retrying in %.1fs: %s",
+                url, attempt + 1, max_retries + 1, delay, last_exc,
+            )
+            time.sleep(delay)
+
+    raise last_exc
+
+
+# ---------------------------------------------------------------------------
 # Convert plexapi stream objects → our SubtitleInfo dataclass
 # ---------------------------------------------------------------------------
 
@@ -55,7 +95,7 @@ def _to_subtitle_info(stream) -> SubtitleInfo:
 
 def _process_item(
     plex: PlexServer,
-    item_key: str,
+    item_key: Union[str, int],
     config: Config,
     stats: ScanStats,
     stats_lock: threading.Lock,
@@ -106,7 +146,7 @@ def _process_item(
                 part = video.media[0].parts[0]
                 url = f"{config.plex_url}/library/parts/{part.id}?subtitleStreamID=0&allParts=1"
                 headers = {"X-Plex-Token": config.plex_token}
-                requests.put(url, headers=headers, timeout=15)
+                _put_with_retry(url, headers)
                 row = RowData(
                     title=display_title, year=year_str,
                     status="Subtitles disabled (fallback)", changed="Y", color=Color.YELLOW,
@@ -154,7 +194,7 @@ def _process_item(
             part = video.media[0].parts[0]
             url = f"{config.plex_url}/library/parts/{part.id}?subtitleStreamID={sub.stream_id}&allParts=1"
             headers = {"X-Plex-Token": config.plex_token}
-            requests.put(url, headers=headers, timeout=15)
+            _put_with_retry(url, headers)
             prefix = ""
             color = Color.GREEN if is_cht else Color.CYAN
             changed = "Y"

@@ -24,6 +24,7 @@ This tool scans your Plex library, identifies Traditional Chinese subtitle track
 - **Scan range** — Only process recently updated items, or do a full library scan
 - **Dry-run mode** — Preview all changes before applying
 - **Flexible config** — CLI arguments, environment variables, or YAML config file
+- **Real-time watcher** — WebSocket listener detects new/updated media instantly (no Plex Pass required)
 - **Docker-ready** — Run as a one-shot container or schedule periodic scans
 
 ## Quick Start / 快速開始
@@ -85,6 +86,13 @@ scan:
   force_overwrite: false
 
 workers: 8
+
+schedule:
+  cron: "0 3 * * *"      # daily at 03:00
+
+watch:
+  enabled: true           # real-time WebSocket listener
+  debounce: 5.0           # seconds to batch events
 ```
 
 Config priority: **CLI args > Environment variables > config.yaml > defaults**
@@ -106,6 +114,11 @@ Scan:
 Schedule:
   --schedule              Run as a persistent service with cron scheduling
   --cron EXPR             Cron expression (default: "0 3 * * *")
+
+Watch:
+  --watch                 Enable real-time watcher via WebSocket
+  --no-watch              Disable watcher (even if --schedule is used)
+  --watch-debounce SECS   Batch delay before processing (default: 5.0)
 
 Output:
   --dry-run               Preview changes without applying
@@ -169,8 +182,9 @@ docker compose up -d
 docker compose logs -f
 ```
 
-Service mode runs the scan immediately on startup, then repeats on the cron schedule (default: daily 03:00).
-常駐模式會在啟動時立刻執行一次掃描，之後按照 cron 排程定期執行（預設每天凌晨 3 點）。
+Service mode (`--schedule`) runs the scan immediately on startup, then repeats on the cron schedule (default: daily 03:00). The real-time watcher is also enabled by default — it detects new/updated media via WebSocket and processes only the changed items.
+
+常駐模式（`--schedule`）啟動時立刻執行一次掃描，之後按照 cron 排程定期執行（預設每天凌晨 3 點）。同時預設啟用即時監控，透過 WebSocket 偵測新增/更新的媒體，只處理變更的項目。
 
 ### Remote deployment / 遠端部署（NAS 等）
 
@@ -182,6 +196,29 @@ docker save plexchtsubs -o plexchtsubs.tar
 # Copy plexchtsubs.tar, docker-compose.yml, config.yaml to target machine, then:
 docker load -i plexchtsubs.tar
 docker compose up -d
+```
+
+## Watch Mode / 即時監控模式
+
+Watch mode uses Plex's WebSocket Alert Listener to detect media changes in real-time. When new media is added or existing media is updated (e.g., file replaced, subtitle added), the watcher processes only the affected items — no full scan needed. **Does not require Plex Pass.**
+
+即時監控模式使用 Plex 的 WebSocket Alert Listener 即時偵測媒體變更。當新增或更新媒體時（如替換檔案、新增字幕），監控器只處理受影響的項目，不需要全面掃描。**不需要 Plex Pass。**
+
+```bash
+# Watch only (no cron)
+python run.py --watch
+
+# Schedule + watch (recommended for Docker, --watch is implicit)
+python run.py --schedule
+
+# Schedule only, disable watcher
+python run.py --schedule --no-watch
+```
+
+Watch mode requires `websocket-client`:
+
+```bash
+pip install websocket-client
 ```
 
 ## Attribution / 致謝

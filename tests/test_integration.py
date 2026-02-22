@@ -51,6 +51,10 @@ class TestConfigMerge:
         cli.dry_run = True
         cli.verbose = None
         cli.log_file = None
+        cli.schedule_enabled = None
+        cli.schedule_cron = None
+        cli.watch_enabled = None
+        cli.watch_debounce = None
         with patch.dict("os.environ", env, clear=False):
             cfg = load_config(cli_args=cli)
         assert cfg.plex_token == "cli-token"  # CLI wins over env
@@ -71,8 +75,27 @@ class TestConfigMerge:
         cli.dry_run = None
         cli.verbose = None
         cli.log_file = None
+        cli.schedule_enabled = None
+        cli.schedule_cron = None
+        cli.watch_enabled = None
+        cli.watch_debounce = None
         cfg = load_config(cli_args=cli)
         assert cfg.scan_range_days is None
+
+    def test_defaults_include_watch_fields(self):
+        """Default config should include watch fields."""
+        with patch("plexchtsubs.config._prompt_token", return_value="fake-token"):
+            cfg = load_config(config_path=Path("/nonexistent/config.yaml"))
+        assert cfg.watch_enabled is False
+        assert cfg.watch_debounce == 5.0
+
+    def test_watch_env_overrides(self):
+        """WATCH_ENABLED and WATCH_DEBOUNCE env vars should work."""
+        env = {"PLEX_TOKEN": "tok", "WATCH_ENABLED": "true", "WATCH_DEBOUNCE": "10.0"}
+        with patch.dict("os.environ", env, clear=False):
+            cfg = load_config(config_path=Path("/nonexistent/config.yaml"))
+        assert cfg.watch_enabled is True
+        assert cfg.watch_debounce == 10.0
 
 
 # ===================================================================

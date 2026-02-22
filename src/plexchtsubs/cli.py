@@ -42,6 +42,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sched.add_argument("--cron", help='Cron expression for schedule (default: "0 3 * * *")')
 
+    watch = p.add_argument_group("watch")
+    watch.add_argument(
+        "--watch", action="store_true", default=None,
+        help="Enable real-time watcher via WebSocket (no Plex Pass required)",
+    )
+    watch.add_argument(
+        "--no-watch", action="store_true", default=None,
+        help="Disable watcher even if enabled in config",
+    )
+    watch.add_argument(
+        "--watch-debounce", type=float, metavar="SECONDS",
+        help="Debounce delay for watcher batching (default: 5.0)",
+    )
+
     output = p.add_argument_group("output")
     output.add_argument("--dry-run", action="store_true", default=None, help="Preview changes without applying")
     output.add_argument("--log-file", help="Write logs to file")
@@ -72,9 +86,25 @@ def main(argv: list[str] | None = None) -> None:
     else:
         args.schedule_cron = None
 
+    # Map --watch/--no-watch to config field
+    if getattr(args, "watch", None):
+        args.watch_enabled = True
+    elif getattr(args, "no_watch", None):
+        args.watch_enabled = False
+    else:
+        args.watch_enabled = None
+    if getattr(args, "watch_debounce", None) is not None:
+        pass  # already set on args
+    else:
+        args.watch_debounce = None
+
     config_path = Path(args.config_file) if args.config_file else None
     config = load_config(cli_args=args, config_path=config_path)
     _setup_logging(config)
+
+    # --schedule implies --watch unless explicitly --no-watch
+    if config.schedule_enabled and args.watch_enabled is None:
+        config.watch_enabled = True
 
     if not config.plex_token:
         print("Error: Plex token is required. Use --plex-token, PLEX_TOKEN env var, or config.yaml.", file=sys.stderr)
@@ -82,10 +112,10 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"\nPlexPreferCHTSubs v{__version__}")
 
-    # Schedule mode: run as persistent service
-    if config.schedule_enabled:
-        from plexchtsubs.scheduler import run_scheduled
-        run_scheduled(config)
+    # Service mode: schedule and/or watch
+    if config.schedule_enabled or config.watch_enabled:
+        from plexchtsubs.scheduler import run_service
+        run_service(config)
         return
 
     # One-shot mode: scan once and exit

@@ -5,7 +5,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt apscheduler>=3.10.0
+RUN pip install --no-cache-dir -r requirements.txt apscheduler>=3.10.0 websocket-client>=1.6.0
 
 COPY src/ src/
 COPY run.py .

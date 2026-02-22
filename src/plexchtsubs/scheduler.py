@@ -1,7 +1,7 @@
-"""Built-in scheduler for running scans on a cron schedule.
+"""Service mode: cron scheduling and/or real-time watcher.
 
-Uses APScheduler for lightweight, in-process scheduling.
-The process stays alive and triggers scan_library() on the configured cron.
+Uses APScheduler for cron-based periodic scans and PlexWatcher
+for WebSocket-based real-time media change detection.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import signal
 import sys
+import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,18 +37,9 @@ def _parse_cron(expr: str) -> dict:
     }
 
 
-def run_scheduled(config: Config) -> None:
-    """Start the scheduler and block until interrupted."""
-    try:
-        from apscheduler.schedulers.blocking import BlockingScheduler
-        from apscheduler.triggers.cron import CronTrigger
-    except ImportError:
-        print("Error: apscheduler is required for scheduled mode.", file=sys.stderr)
-        print("Install it with: pip install apscheduler", file=sys.stderr)
-        sys.exit(1)
-
+def run_service(config: Config) -> None:
+    """Start persistent service with cron scheduling and/or real-time watcher."""
     from plexapi.server import PlexServer
-    from plexchtsubs.scanner import scan_library
 
     # Connect once to verify credentials
     print(f"Connecting to {config.plex_url} ...")
@@ -58,33 +50,68 @@ def run_scheduled(config: Config) -> None:
         sys.exit(1)
     print(f"Connected: {plex.friendlyName} (v{plex.version})")
 
-    cron_kwargs = _parse_cron(config.schedule_cron)
-    trigger = CronTrigger(**cron_kwargs)
+    watcher = None
+    scheduler = None
+    stop_event = threading.Event()
 
-    def _job():
-        """Reconnect and scan (connection may go stale between runs)."""
+    # --- Watcher (if enabled) ---
+    if config.watch_enabled:
         try:
-            p = PlexServer(config.plex_url, config.plex_token)
-            logger.info("Scheduled scan starting...")
-            scan_library(p, config)
-        except Exception as e:
-            logger.error("Scheduled scan failed: %s", e)
+            from plexchtsubs.watcher import PlexWatcher
+        except ImportError:
+            print("Error: websocket-client is required for watch mode.", file=sys.stderr)
+            print("Install it with: pip install websocket-client", file=sys.stderr)
+            sys.exit(1)
+        watcher = PlexWatcher(plex, config)
+        watcher.start()
+        print(f"Watcher started (debounce: {config.watch_debounce}s)")
 
-    scheduler = BlockingScheduler()
-    scheduler.add_job(_job, trigger, id="plexchtsubs_scan", name="PlexPreferCHTSubs scan")
+    # --- Cron scheduler (if enabled) ---
+    if config.schedule_enabled:
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            from apscheduler.triggers.cron import CronTrigger
+        except ImportError:
+            print("Error: apscheduler is required for scheduled mode.", file=sys.stderr)
+            print("Install it with: pip install apscheduler", file=sys.stderr)
+            sys.exit(1)
 
-    # Graceful shutdown on SIGTERM (Docker stop)
+        from plexchtsubs.scanner import scan_library
+
+        cron_kwargs = _parse_cron(config.schedule_cron)
+        trigger = CronTrigger(**cron_kwargs)
+
+        def _job():
+            """Reconnect and scan (connection may go stale between runs)."""
+            try:
+                p = PlexServer(config.plex_url, config.plex_token)
+                logger.info("Scheduled scan starting...")
+                scan_library(p, config)
+            except Exception as e:
+                logger.error("Scheduled scan failed: %s", e)
+
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(_job, trigger, id="plexchtsubs_scan", name="PlexPreferCHTSubs scan")
+        scheduler.start()
+
+        print(f"Scheduler started. Cron: {config.schedule_cron}")
+
+        # Run initial scan immediately
+        _job()
+
+    print("Press Ctrl+C to stop.\n")
+
+    # --- Graceful shutdown ---
     def _shutdown(signum, frame):
-        logger.info("Received signal %s, shutting down scheduler...", signum)
-        scheduler.shutdown(wait=False)
+        logger.info("Received signal %s, shutting down...", signum)
+        if watcher:
+            watcher.stop()
+        if scheduler:
+            scheduler.shutdown(wait=False)
+        stop_event.set()
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    print(f"\nScheduler started. Cron: {config.schedule_cron}")
-    print("Press Ctrl+C to stop.\n")
-
-    # Run once immediately on startup, then follow cron
-    _job()
-
-    scheduler.start()
+    # Block main thread until shutdown signal
+    stop_event.wait()

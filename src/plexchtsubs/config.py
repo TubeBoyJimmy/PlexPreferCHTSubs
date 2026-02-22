@@ -31,6 +31,8 @@ _DEFAULTS = {
     "dry_run": False,
     "verbose": False,
     "log_file": None,
+    "watch_enabled": False,
+    "watch_debounce": 5.0,
 }
 
 
@@ -48,6 +50,9 @@ class Config:
     # Schedule (Phase 2)
     schedule_enabled: bool = False
     schedule_cron: str = "0 3 * * *"  # default: daily at 3 AM
+    # Watch mode (real-time WebSocket listener)
+    watch_enabled: bool = False
+    watch_debounce: float = 5.0  # seconds to batch events before processing
 
 
 def _load_yaml(path: Path) -> dict:
@@ -100,6 +105,13 @@ def _flatten_yaml(data: dict) -> dict:
         if "cron" in schedule:
             flat["schedule_cron"] = schedule["cron"]
 
+    watch = data.get("watch", {})
+    if isinstance(watch, dict):
+        if "enabled" in watch:
+            flat["watch_enabled"] = bool(watch["enabled"])
+        if "debounce" in watch:
+            flat["watch_debounce"] = float(watch["debounce"])
+
     return flat
 
 
@@ -114,6 +126,8 @@ def _from_env() -> dict:
         "WORKERS": "workers",
         "SCHEDULE_ENABLED": "schedule_enabled",
         "SCHEDULE_CRON": "schedule_cron",
+        "WATCH_ENABLED": "watch_enabled",
+        "WATCH_DEBOUNCE": "watch_debounce",
     }
     result = {}
     for env_key, config_key in env_map.items():
@@ -125,8 +139,10 @@ def _from_env() -> dict:
             result[config_key] = int(val) if val else None
         elif config_key == "workers":
             result[config_key] = int(val)
-        elif config_key in ("force_overwrite", "schedule_enabled"):
+        elif config_key in ("force_overwrite", "schedule_enabled", "watch_enabled"):
             result[config_key] = val.lower() in ("1", "true", "yes")
+        elif config_key == "watch_debounce":
+            result[config_key] = float(val)
         else:
             result[config_key] = val
     return result
@@ -146,6 +162,8 @@ def _from_cli(args) -> dict:
         "log_file": "log_file",
         "schedule_enabled": "schedule_enabled",
         "schedule_cron": "schedule_cron",
+        "watch_enabled": "watch_enabled",
+        "watch_debounce": "watch_debounce",
     }
     result = {}
     for arg_name, config_key in mapping.items():
