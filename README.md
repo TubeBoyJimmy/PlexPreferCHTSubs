@@ -1,43 +1,43 @@
 # PlexPreferCHTSubs
 
-> **[中文版 README](README.zh-TW.md)**
+> **[English README](README.en.md)**
 
-**Automatically set Traditional Chinese (繁體中文) as the preferred subtitle in Plex.**
+**自動將 Plex 媒體庫的預設字幕設為繁體中文（Traditional Chinese）。**
 
 ---
 
-## Why?
+## 為什麼需要這個工具？
 
-Plex treats Chinese subtitles as a single language and often defaults to Simplified Chinese when multiple Chinese subtitle tracks are available. There is no built-in way to prefer Traditional Chinese.
+Plex 將中文字幕視為單一語言，當媒體檔案同時包含繁體和簡體字幕時，往往預設選擇簡體中文。Plex 沒有內建的方式讓使用者偏好繁體中文字幕。
 
-This tool scans your Plex library, identifies Traditional Chinese subtitle tracks using a multi-layered scoring system, and sets them as the default.
+此工具掃描你的 Plex 媒體庫，透過多層評分系統辨識繁體中文字幕軌，並將其設為預設。
 
-## Features
+## 功能
 
-- **Smart CHT/CHS detection** — Multi-layered scoring: title regex, language metadata, and character frequency analysis
-- **Content analysis** — For unlabeled Chinese subtitles (just "中文"), downloads and analyzes subtitle text to distinguish Traditional from Simplified using 90 character pairs
-- **External subtitle preference** — Prioritizes external subtitle files (.srt/.ass) over embedded MKV tracks
-- **Real-time watcher** — WebSocket listener detects new/updated media instantly (no Plex Pass required)
-- **Configurable fallback** — When no CHT subtitle is found: accept CHS, use English, skip, or disable
-- **Multi-threaded scanning** — Process large libraries quickly with parallel workers
-- **Dry-run mode** — Preview all changes before applying
-- **Flexible config** — CLI arguments, environment variables, or YAML config file
-- **Web UI dashboard** — Browser-based status monitoring and manual scan trigger
-- **Docker-ready** — One-shot container or persistent service with cron + watcher + web UI
+- **智慧繁簡辨識** — 多層評分：標題正規表達式、語言 metadata、字元頻率分析
+- **內容分析** — 針對未標示繁簡的中文字幕（僅標記「中文」），下載字幕文本，以 90 組繁簡對照字元自動判斷
+- **外掛字幕優先** — 同時有內嵌 MKV 字幕和外掛 .srt/.ass 時，優先選擇外掛字幕
+- **即時監控** — WebSocket 監聽 Plex 媒體變更，即時處理新增/更新的項目，不需要 Plex Pass
+- **備援策略** — 找不到繁中時可選擇：接受簡中、切換英文、不動、或關閉字幕
+- **多執行緒掃描** — 平行處理大型媒體庫
+- **預覽模式** — 套用前先預覽所有變更
+- **彈性設定** — 支援 CLI 參數、環境變數、YAML 設定檔
+- **Web UI 儀表板** — 瀏覽器介面，遠端監控狀態及手動觸發掃描
+- **Docker 支援** — 單次執行或常駐服務（cron + watcher + Web UI）
 
-## Quick Start
+## 快速開始
 
-### Option A: Standalone exe (Windows)
+### 方式 A：直接下載 exe（Windows）
 
-Download `plexchtsubs.exe` from [Releases](https://github.com/TubeBoyJimmy/PlexPreferCHTSubs/releases). No Python installation required.
+從 [Releases](https://github.com/TubeBoyJimmy/PlexPreferCHTSubs/releases) 下載 `plexchtsubs.exe`，不需要安裝 Python。
 
 ```bash
-# Place config.yaml in the same directory as the exe, then:
+# 將 config.yaml 放在 exe 同目錄下，然後：
 plexchtsubs.exe --dry-run
 plexchtsubs.exe --help
 ```
 
-### Option B: Python
+### 方式 B：Python 執行
 
 ```bash
 git clone https://github.com/TubeBoyJimmy/PlexPreferCHTSubs.git
@@ -46,9 +46,9 @@ pip install -r requirements.txt
 python run.py --help
 ```
 
-### Configure
+### 設定
 
-Copy `config.example.yaml` to `config.yaml` and fill in your Plex URL and token:
+將 `config.example.yaml` 複製為 `config.yaml`，填入你的 Plex URL 和 token：
 
 ```yaml
 plex:
@@ -56,7 +56,7 @@ plex:
   token: "your-token-here"       # https://www.plexopedia.com/plex-media-server/general/plex-token/
 
 scan:
-  range_days: 30                 # Scan items updated within N days (null = full scan)
+  range_days: 30                 # 掃描最近 N 天內更新的項目（null = 全部掃描）
   fallback: chs                  # chs | english | skip | none
   force_overwrite: false
 
@@ -64,240 +64,242 @@ workers: 8
 
 schedule:
   enabled: false
-  cron: "0 3 * * 0"             # Weekly Sunday 03:00
+  cron: "0 3 * * 0"             # 每週日凌晨 03:00
 
 watch:
   enabled: false
-  debounce: 5.0                  # Seconds to batch events before processing
+  debounce: 5.0                  # 批次處理前等待秒數
 
 web:
   enabled: false
   port: 9527
-  # username: "admin"            # Uncomment to enable Basic Auth
+  # username: "admin"            # 取消註解以啟用 Basic Auth
   # password: "changeme"
 ```
 
-Config priority: **CLI args > Environment variables > config.yaml > defaults**
+設定優先順序：**CLI 參數 > 環境變數 > config.yaml > 預設值**
 
-### Run
+### 執行
 
 ```bash
-# Dry run — preview changes without applying
+# 預覽模式 — 只看不改
 python run.py --dry-run
 
-# Apply changes (scan recent 30 days, per config default)
+# 套用變更（預設掃描近 30 天）
 python run.py
 
-# Full scan with fallback to English
+# 全掃描，找不到繁中時退而用英文
 python run.py --scan-range 0 --fallback english
 
-# Force re-evaluate all items (even already-set ones)
+# 強制重新評估所有項目（含已設定的）
 python run.py --force
 ```
 
-## How Detection Works
+## 偵測原理
 
-Each subtitle track receives a confidence score. The highest-scoring CHT track is selected.
+每條字幕軌會得到一個信心分數，分數最高的繁體中文字幕會被選為預設。
 
-### Scoring Table
+### 評分表
 
-| Score | Source | Meaning |
-|------:|--------|---------|
-| +100 | Title regex | Definite CHT — title contains keywords (see below) |
-| +95 | Language code | CHT by code: `zh-tw`, `zh-hant` |
-| +90 | Language description | CHT by description: "Traditional", "Taiwan", "Hong Kong" |
-| +85 | Content analysis | CHT detected by character frequency (>=70% Traditional characters) |
-| +10 | Generic Chinese | Unknown variant (code is `chi`/`zho` with no variant info) — triggers fallback |
-| 0 | Non-Chinese | Not Chinese at all |
-| -100 | CHS detected | Definite Simplified Chinese (by title, code, description, or content) |
+| 分數 | 來源 | 說明 |
+|-----:|------|------|
+| +100 | 標題正規匹配 | 確定繁中 — 標題含有關鍵字（見下表） |
+| +95 | 語言代碼 | 繁中代碼：`zh-tw`、`zh-hant` |
+| +90 | 語言描述 | 繁中描述：「Traditional」、「Taiwan」、「Hong Kong」 |
+| +85 | 內容分析 | 字元頻率分析判定為繁中（繁體字元 ≥70%） |
+| +10 | 泛中文 | 無法判斷繁簡（代碼為 `chi`/`zho` 且無變體資訊）— 觸發備援策略 |
+| 0 | 非中文 | 不是中文字幕 |
+| -100 | 確定簡中 | 確定簡體中文（標題、代碼、描述或內容分析判定） |
 
-### Title Keywords
+### 標題關鍵字
 
-| Category | Keywords |
-|----------|----------|
-| CHT | `CHT`, `TC`, `JPTC`, `繁體`, `繁体`, `繁中`, `繁日`, `繁英`, `正體`, `正体`, `Traditional`, `BIG5`, `fanti`, `zh-Hant`, `zh-TW`, `Taiwan`, `台灣`, `台湾`, `Hong Kong`, `香港`, `HK` |
-| CHS | `CHS`, `SC`, `JPSC`, `简体`, `简中`, `簡體`, `简日`, `简英`, `Simplified`, `jianti`, `zh-Hans`, `zh-CN`, `GB2312`, `GBK` |
+| 分類 | 關鍵字 |
+|------|--------|
+| 繁中 | `CHT`、`TC`、`JPTC`、`繁體`、`繁体`、`繁中`、`繁日`、`繁英`、`正體`、`正体`、`Traditional`、`BIG5`、`fanti`、`zh-Hant`、`zh-TW`、`Taiwan`、`台灣`、`台湾`、`Hong Kong`、`香港`、`HK` |
+| 簡中 | `CHS`、`SC`、`JPSC`、`简体`、`简中`、`簡體`、`简日`、`简英`、`Simplified`、`jianti`、`zh-Hans`、`zh-CN`、`GB2312`、`GBK` |
 
-### Modifiers
+### 修正項
 
-| Modifier | Effect | Reason |
-|----------|--------|--------|
-| Forced subtitle | -50 penalty | Avoid forced/SDH tracks with only essential dialogue |
-| External subtitle file | +2 bonus | Prefer external .srt/.ass over embedded MKV tracks |
+| 修正項 | 效果 | 原因 |
+|--------|------|------|
+| Forced 字幕 | -50 扣分 | 避免選到只含關鍵對白的強制字幕 |
+| 外掛字幕檔 | +2 加分 | 外掛 .srt/.ass 通常是刻意添加的，品質較佳 |
 
-### Selection Logic
+### 選取邏輯
 
-1. **CHT by category** — any track classified as CHT is selected (highest score wins among multiple CHT)
-2. **"Second Generic" heuristic** — when 2+ unknown Chinese tracks exist with no metadata, pick the second by stream order (common MKV convention: CHS first, CHT second). External subtitles with higher scores take priority.
-3. **Fallback** — if no CHT found, apply the configured fallback strategy
+1. **繁中分類優先** — 任何被分類為 CHT 的字幕軌都會被選取（多條 CHT 時選分數最高的）
+2. **「第二軌」啟發式** — 當有 2 條以上的泛中文字幕且無 metadata 可判斷時，選取第二軌（常見 MKV 慣例：第一軌簡中、第二軌繁中）。外掛字幕因加分較高會優先被選取。
+3. **備援策略** — 找不到繁中時，套用設定的備援策略
 
-### Content Analysis
+### 內容分析
 
-When a Chinese subtitle has no clear CHT/CHS indicator in its metadata, the tool downloads a sample of the subtitle text and counts Traditional vs Simplified character usage using 90 high-frequency character pairs (e.g., 們/们, 這/这, 會/会).
+當中文字幕的 metadata 沒有明確的繁簡標示時（僅標記為「中文」或「Chinese」），工具會下載字幕文本樣本，使用 90 組高頻繁簡對照字元（如 們/们、這/这、會/会）統計繁體與簡體字元的使用比例。
 
-- **>=70% Traditional** → CHT (score 85)
-- **<=30% Traditional** → CHS (score -100)
-- **30-70%** → ambiguous, triggers fallback
-- Skips image-based subtitles (PGS, VobSub)
-- Supports UTF-8, UTF-16, Big5, GB18030 encoding
-- Downloads at most 50KB per subtitle — fast and lightweight
+- **≥70% 繁體字元** → 繁中（85 分）
+- **≤30% 繁體字元** → 簡中（-100 分）
+- **30-70%** → 無法判斷，觸發備援策略
+- 跳過圖片式字幕（PGS、VobSub）
+- 支援 UTF-8、UTF-16、Big5、GB18030 編碼
+- 每條字幕最多下載 50KB — 快速且輕量
 
-## Fallback Strategies
+## 備援策略
 
-| `--fallback` | Behavior |
+找不到繁體中文字幕時的處理方式：
+
+| `--fallback` | 行為 |
 |---|---|
-| `chs` (default) | Accept Simplified Chinese — at least it's Chinese |
-| `english` | Fall back to English subtitles |
-| `skip` | Don't change — keep Plex's current setting |
-| `none` | Disable subtitles |
+| `chs`（預設） | 接受簡體中文，至少還是中文 |
+| `english` | 退而求其次用英文字幕 |
+| `skip` | 不動，保留 Plex 原本設定 |
+| `none` | 關閉字幕 |
 
-## CLI Options
+## 命令列參數
 
 ```
-Connection:
-  --plex-url URL          Plex server URL (default: http://localhost:32400)
-  --plex-token TOKEN      Plex authentication token
-  --config FILE           Path to config.yaml
+連線:
+  --plex-url URL          Plex 伺服器網址（預設: http://localhost:32400）
+  --plex-token TOKEN      Plex 認證 token
+  --config FILE           設定檔路徑
 
-Scan:
-  --scan-range DAYS       Scan items updated within N days (0 = full scan)
-  --fallback STRATEGY     When no CHT found: chs | english | skip | none (default: chs)
-  --force                 Force overwrite existing subtitle selections
-  --workers N             Parallel threads (default: 8)
+掃描:
+  --scan-range DAYS       掃描最近 N 天內更新的項目（0 = 全掃描）
+  --fallback STRATEGY     找不到繁中時: chs | english | skip | none（預設: chs）
+  --force                 強制重新評估已選定的字幕
+  --workers N             平行執行緒數（預設: 8）
 
-Schedule:
-  --schedule              Run as a persistent service with cron scheduling
-  --cron EXPR             Cron expression (default: "0 3 * * 0", weekly Sun 3AM)
+排程:
+  --schedule              以常駐服務模式運行（含 cron 排程）
+  --cron EXPR             Cron 表達式（預設: "0 3 * * 0"，每週日凌晨 3 點）
 
-Watch:
-  --watch                 Enable real-time watcher via WebSocket
-  --no-watch              Disable watcher (even if --schedule is used)
-  --watch-debounce SECS   Batch delay before processing (default: 5.0)
+即時監控:
+  --watch                 啟用 WebSocket 即時監控
+  --no-watch              停用監控（即使使用 --schedule）
+  --watch-debounce SECS   批次處理前的等待秒數（預設: 5.0）
 
 Web UI:
-  --web                   Enable web UI dashboard (default port: 9527)
-  --web-port PORT         Web UI port (default: 9527)
+  --web                   啟用 Web UI 儀表板（預設 port: 9527）
+  --web-port PORT         Web UI 埠號（預設: 9527）
 
-Output:
-  --dry-run               Preview changes without applying
-  --log-file PATH         Write logs to file
-  -v, --verbose           Verbose output
+輸出:
+  --dry-run               預覽模式，不實際變更
+  --log-file PATH         日誌輸出到檔案
+  -v, --verbose           詳細輸出
 ```
 
-## Watch Mode
+## 即時監控模式
 
-Watch mode uses Plex's WebSocket Alert Listener to detect media changes in real-time. When new media is added or updated, the watcher processes only the affected items — no full scan needed. **Does not require Plex Pass.**
+透過 Plex 的 WebSocket Alert Listener 即時偵測媒體變更。當新增或更新媒體時（如替換檔案、新增字幕），監控器只處理受影響的項目，不需要全面掃描。**不需要 Plex Pass。**
 
-Events are debounced (default 5 seconds) to batch rapid changes — e.g., importing a full season triggers a single batch instead of per-episode processing.
+事件會進行防抖處理（預設 5 秒），批次處理快速連續的變更 — 例如一次匯入整季會合併為一次批次處理，而非逐集觸發。
 
 ```bash
-# Watch only (no cron)
+# 僅監控（無 cron 排程）
 python run.py --watch --dry-run
 
-# Schedule + watch (recommended for persistent service)
-# --schedule automatically enables --watch unless --no-watch is specified
+# 排程 + 監控（建議的常駐模式）
+# --schedule 自動啟用 --watch，除非指定 --no-watch
 python run.py --schedule
 
-# Schedule only, disable watcher
+# 僅排程，不啟用監控
 python run.py --schedule --no-watch
 ```
 
-Auto-reconnect: if the WebSocket connection drops, the watcher reconnects with exponential backoff (2s → 4s → 8s → ... up to 5 minutes).
+自動重連：若 WebSocket 斷線，監控器會以指數退避方式自動重連（2 秒 → 4 秒 → 8 秒 → 最長 5 分鐘）。
 
 ## Web UI
 
-A browser-based dashboard for remote monitoring and manual scan triggering. Useful when running as a Docker service on a NAS.
+瀏覽器介面的儀表板，適合 Docker / NAS 環境下遠端監控和手動操作。
 
 ```bash
-# Web UI only
+# 僅 Web UI
 python run.py --web
 
-# Web UI + schedule + watcher (full service mode)
+# Web UI + 排程 + 監控（完整服務模式）
 python run.py --schedule --web
 
-# Custom port
+# 自訂 port
 python run.py --web --web-port 3000
 ```
 
-Open `http://your-server:9527` in a browser to access the dashboard.
+開啟瀏覽器前往 `http://你的伺服器:9527` 即可存取。
 
-Features:
-- Real-time status display (Plex connection, watcher, scan progress)
-- One-click manual scan with dry-run option
-- Scan history with statistics
-- Current configuration overview
-- Optional Basic Auth (set `web.username` and `web.password` in config)
+功能：
+- 即時顯示 Plex 連線狀態、Watcher 狀態、掃描進度
+- 一鍵觸發手動掃描（可選 dry-run）
+- 掃描歷史紀錄及統計
+- 目前設定總覽
+- 可選 Basic Auth 認證（在 config 中設定 `web.username` 和 `web.password`）
 
 ## Docker
 
-### One-shot scan
+### 單次掃描
 
 ```bash
 docker compose run --rm plexchtsubs --dry-run
 ```
 
-### Service mode
+### 常駐模式
 
 ```bash
-# Start service (real-time watcher + web UI dashboard)
+# 啟動服務（即時監控 + Web UI 儀表板）
 docker compose up -d
 
-# View logs
+# 查看日誌
 docker compose logs -f
 
-# Stop
+# 停止
 docker compose down
 ```
 
-The default Docker Compose command runs `--watch --web`: real-time watcher for instant subtitle processing on new media, plus a web dashboard at port 9527 for monitoring and manual scans. Add `--schedule` to also enable periodic cron scans.
+Docker Compose 預設指令為 `--watch --web`：即時監控新增媒體並自動處理字幕，同時在 port 9527 提供 Web 儀表板供遠端監控和手動掃描。如需定時 cron 排程，可加入 `--schedule`。
 
-### Build from source
+### 從原始碼建置
 
 ```bash
 docker build -t plexchtsubs .
 ```
 
-### Remote deployment (NAS, etc.)
+### 遠端部署（NAS 等）
 
 ```bash
-# On build machine
+# 在建置機器上
 docker build -t plexchtsubs .
 docker save plexchtsubs -o plexchtsubs.tar
 
-# Copy plexchtsubs.tar, docker-compose.yml, config.yaml to target machine
+# 將 plexchtsubs.tar、docker-compose.yml、config.yaml 複製到目標機器
 
-# On target machine
+# 在目標機器上
 sudo docker load < plexchtsubs.tar
 sudo docker compose up -d
 sudo docker compose logs -f
 ```
 
-## Environment Variables
+## 環境變數
 
-All config options can be set via environment variables (useful for Docker):
+所有設定都可透過環境變數設定（適合 Docker 使用）：
 
-| Variable | Description |
-|----------|-------------|
-| `PLEX_URL` | Plex server URL |
-| `PLEX_TOKEN` | Plex authentication token |
-| `SCAN_RANGE` | Days to scan (0 = full) |
-| `FALLBACK` | Fallback strategy |
-| `WORKERS` | Parallel threads |
-| `DRY_RUN` | `true` for preview mode |
-| `SCHEDULE_ENABLED` | `true` for service mode |
-| `SCHEDULE_CRON` | Cron expression |
-| `WATCH_ENABLED` | `true` for real-time watcher |
-| `WATCH_DEBOUNCE` | Debounce seconds |
-| `WEB_ENABLED` | `true` for web UI dashboard |
-| `WEB_HOST` | Web UI bind address (default: `0.0.0.0`) |
-| `WEB_PORT` | Web UI port (default: `9527`) |
-| `WEB_USERNAME` | Basic Auth username (empty = no auth) |
-| `WEB_PASSWORD` | Basic Auth password |
+| 變數 | 說明 |
+|------|------|
+| `PLEX_URL` | Plex 伺服器網址 |
+| `PLEX_TOKEN` | Plex 認證 token |
+| `SCAN_RANGE` | 掃描天數（0 = 全掃描） |
+| `FALLBACK` | 備援策略 |
+| `WORKERS` | 平行執行緒數 |
+| `DRY_RUN` | 設為 `true` 啟用預覽模式 |
+| `SCHEDULE_ENABLED` | 設為 `true` 啟用常駐模式 |
+| `SCHEDULE_CRON` | Cron 排程表達式 |
+| `WATCH_ENABLED` | 設為 `true` 啟用即時監控 |
+| `WATCH_DEBOUNCE` | 防抖秒數 |
+| `WEB_ENABLED` | 設為 `true` 啟用 Web UI 儀表板 |
+| `WEB_HOST` | Web UI 綁定位址（預設: `0.0.0.0`） |
+| `WEB_PORT` | Web UI 埠號（預設: `9527`） |
+| `WEB_USERNAME` | Basic Auth 帳號（空白 = 不啟用認證） |
+| `WEB_PASSWORD` | Basic Auth 密碼 |
 
-## Attribution
+## 致謝
 
-Inspired by [PlexPreferNonForcedSubs](https://github.com/RileyXX/PlexPreferNonForcedSubs) by RileyXX (MIT License).
+靈感來自 [PlexPreferNonForcedSubs](https://github.com/RileyXX/PlexPreferNonForcedSubs)，由 RileyXX 開發（MIT License）。
 
-## License
+## 授權
 
 [MIT](LICENSE)
