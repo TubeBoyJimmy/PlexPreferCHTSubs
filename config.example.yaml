@@ -12,3 +12,8 @@ scan:
   force_overwrite: false            # Re-evaluate items that already have a subtitle set
 
 workers: 8                          # Number of parallel threads
+
+# Schedule mode — run as a persistent service instead of one-shot
+schedule:
+  enabled: false
+  cron: "0 3 * * *"                 # Standard 5-field cron: minute hour day month weekday

@@ -3,6 +3,7 @@
 Run:  python -m pytest tests/ -v
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -21,7 +22,7 @@ class TestConfigMerge:
     def test_defaults(self):
         """No input at all → defaults should apply."""
         with patch("plexchtsubs.config._prompt_token", return_value="fake-token"):
-            cfg = load_config()
+            cfg = load_config(config_path=Path("/nonexistent/config.yaml"))
         assert cfg.plex_url == "http://localhost:32400"
         assert cfg.fallback == "skip"
         assert cfg.scan_range_days == 30

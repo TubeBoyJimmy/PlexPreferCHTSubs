@@ -1,0 +1,19 @@
+# PlexPreferCHTSubs - Docker Compose
+#
+# Usage:
+#   One-shot scan:   docker compose run --rm plexchtsubs --dry-run
+#   Service mode:    docker compose up -d
+#   View logs:       docker compose logs -f
+
+services:
+  plexchtsubs:
+    build: .
+    container_name: plexchtsubs
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ./config.yaml
+        target: /app/config.yaml
+        read_only: true
+    # Service mode: run on schedule (comment out for one-shot)
+    command: ["--schedule"]

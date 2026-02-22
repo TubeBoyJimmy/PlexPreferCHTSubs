@@ -45,6 +45,9 @@ class Config:
     dry_run: bool = _DEFAULTS["dry_run"]
     verbose: bool = _DEFAULTS["verbose"]
     log_file: Optional[str] = None
+    # Schedule (Phase 2)
+    schedule_enabled: bool = False
+    schedule_cron: str = "0 3 * * *"  # default: daily at 3 AM
 
 
 def _load_yaml(path: Path) -> dict:
@@ -90,6 +93,13 @@ def _flatten_yaml(data: dict) -> dict:
     if "workers" in data:
         flat["workers"] = data["workers"]
 
+    schedule = data.get("schedule", {})
+    if isinstance(schedule, dict):
+        if "enabled" in schedule:
+            flat["schedule_enabled"] = bool(schedule["enabled"])
+        if "cron" in schedule:
+            flat["schedule_cron"] = schedule["cron"]
+
     return flat
 
 
@@ -102,6 +112,8 @@ def _from_env() -> dict:
         "FALLBACK": "fallback",
         "FORCE_OVERWRITE": "force_overwrite",
         "WORKERS": "workers",
+        "SCHEDULE_ENABLED": "schedule_enabled",
+        "SCHEDULE_CRON": "schedule_cron",
     }
     result = {}
     for env_key, config_key in env_map.items():
@@ -113,7 +125,7 @@ def _from_env() -> dict:
             result[config_key] = int(val) if val else None
         elif config_key == "workers":
             result[config_key] = int(val)
-        elif config_key in ("force_overwrite",):
+        elif config_key in ("force_overwrite", "schedule_enabled"):
             result[config_key] = val.lower() in ("1", "true", "yes")
         else:
             result[config_key] = val
@@ -132,6 +144,8 @@ def _from_cli(args) -> dict:
         "dry_run": "dry_run",
         "verbose": "verbose",
         "log_file": "log_file",
+        "schedule_enabled": "schedule_enabled",
+        "schedule_cron": "schedule_cron",
     }
     result = {}
     for arg_name, config_key in mapping.items():

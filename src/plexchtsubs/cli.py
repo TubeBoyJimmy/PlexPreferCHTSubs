@@ -35,6 +35,13 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--force", action="store_true", default=None, help="Force overwrite existing selections")
     scan.add_argument("--workers", type=int, help="Number of parallel threads (default: 8)")
 
+    sched = p.add_argument_group("schedule")
+    sched.add_argument(
+        "--schedule", action="store_true", default=None,
+        help="Run as a persistent service with cron scheduling (requires apscheduler)",
+    )
+    sched.add_argument("--cron", help='Cron expression for schedule (default: "0 3 * * *")')
+
     output = p.add_argument_group("output")
     output.add_argument("--dry-run", action="store_true", default=None, help="Preview changes without applying")
     output.add_argument("--log-file", help="Write logs to file")
@@ -55,6 +62,16 @@ def main(argv: list[str] | None = None) -> None:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    # Map --schedule and --cron to config fields
+    if getattr(args, "schedule", None):
+        args.schedule_enabled = True
+    else:
+        args.schedule_enabled = None
+    if getattr(args, "cron", None):
+        args.schedule_cron = args.cron
+    else:
+        args.schedule_cron = None
+
     config_path = Path(args.config_file) if args.config_file else None
     config = load_config(cli_args=args, config_path=config_path)
     _setup_logging(config)
@@ -63,11 +80,18 @@ def main(argv: list[str] | None = None) -> None:
         print("Error: Plex token is required. Use --plex-token, PLEX_TOKEN env var, or config.yaml.", file=sys.stderr)
         sys.exit(1)
 
-    # Import here to avoid import error when plexapi is not installed but --help is requested
+    print(f"\nPlexPreferCHTSubs v{__version__}")
+
+    # Schedule mode: run as persistent service
+    if config.schedule_enabled:
+        from plexchtsubs.scheduler import run_scheduled
+        run_scheduled(config)
+        return
+
+    # One-shot mode: scan once and exit
     from plexapi.server import PlexServer
     from plexchtsubs.scanner import scan_library
 
-    print(f"\nPlexPreferCHTSubs v{__version__}")
     print(f"Connecting to {config.plex_url} ...")
 
     try:

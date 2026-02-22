@@ -103,6 +103,10 @@ Scan:
   --force                 Force overwrite existing subtitle selections
   --workers N             Parallel threads (default: 8)
 
+Schedule:
+  --schedule              Run as a persistent service with cron scheduling
+  --cron EXPR             Cron expression (default: "0 3 * * *")
+
 Output:
   --dry-run               Preview changes without applying
   --log-file PATH         Write logs to file
@@ -135,14 +139,38 @@ Forced subtitles receive an additional -50 penalty.
 
 ## Docker / Docker 使用
 
+### Build / 建置
+
+```bash
+docker build -t plexchtsubs .
+```
+
+### One-shot scan / 單次掃描
+
 ```bash
 docker run --rm \
   -e PLEX_URL=http://plex:32400 \
   -e PLEX_TOKEN=your-token \
-  plexchtsubs --scan-range 30
+  plexchtsubs --dry-run --scan-range 30
 ```
 
-*(Dockerfile will be provided in a future release)*
+### Service mode / 常駐排程
+
+```bash
+# Using docker-compose (recommended)
+# Edit docker-compose.yml with your PLEX_TOKEN, then:
+docker compose up -d
+
+# Or run directly:
+docker run -d --restart unless-stopped \
+  -e PLEX_URL=http://plex:32400 \
+  -e PLEX_TOKEN=your-token \
+  --name plexchtsubs \
+  plexchtsubs --schedule --cron "0 3 * * *"
+```
+
+Service mode runs the scan immediately on startup, then repeats on the cron schedule.
+常駐模式會在啟動時立刻執行一次掃描，之後按照 cron 排程定期執行。
 
 ## Attribution / 致謝
 
