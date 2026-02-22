@@ -118,6 +118,12 @@ def _fetch_subtitle_content(
         resp = requests.get(url, headers=headers, timeout=10)
         resp.raise_for_status()
         raw = resp.content[:max_bytes]
+        # Check for UTF-16 BOM first (common for Windows-created .srt files)
+        if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            try:
+                return raw.decode("utf-16")
+            except (UnicodeDecodeError, LookupError):
+                pass
         for enc in ("utf-8", "utf-8-sig", "big5", "gb18030"):
             try:
                 return raw.decode(enc)
@@ -291,8 +297,14 @@ def _process_item(
 # Library scanning — collect items, then process in parallel
 # ---------------------------------------------------------------------------
 
-def scan_library(plex: PlexServer, config: Config) -> ScanStats:
-    """Scan Plex library sections and set preferred subtitles."""
+def scan_library(
+    plex: PlexServer, config: Config, *, on_complete=None,
+) -> ScanStats:
+    """Scan Plex library sections and set preferred subtitles.
+
+    Args:
+        on_complete: Optional callback ``f(stats, duration)`` invoked after scan.
+    """
     cutoff: Optional[datetime] = None
     if config.scan_range_days is not None:
         cutoff = datetime.now() - timedelta(days=config.scan_range_days)
@@ -364,5 +376,11 @@ def scan_library(plex: PlexServer, config: Config) -> ScanStats:
 
     duration = time.time() - start_time
     print_summary(stats, duration)
+
+    if on_complete is not None:
+        try:
+            on_complete(stats, duration)
+        except Exception:
+            logger.debug("on_complete callback error", exc_info=True)
 
     return stats

@@ -55,6 +55,8 @@ class TestConfigMerge:
         cli.schedule_cron = None
         cli.watch_enabled = None
         cli.watch_debounce = None
+        cli.web_enabled = None
+        cli.web_port = None
         with patch.dict("os.environ", env, clear=False):
             cfg = load_config(cli_args=cli)
         assert cfg.plex_token == "cli-token"  # CLI wins over env
@@ -79,6 +81,8 @@ class TestConfigMerge:
         cli.schedule_cron = None
         cli.watch_enabled = None
         cli.watch_debounce = None
+        cli.web_enabled = None
+        cli.web_port = None
         cfg = load_config(cli_args=cli)
         assert cfg.scan_range_days is None
 
@@ -96,6 +100,24 @@ class TestConfigMerge:
             cfg = load_config(config_path=Path("/nonexistent/config.yaml"))
         assert cfg.watch_enabled is True
         assert cfg.watch_debounce == 10.0
+
+    def test_defaults_include_web_fields(self):
+        """Default config should include web fields."""
+        with patch("plexchtsubs.config._prompt_token", return_value="fake-token"):
+            cfg = load_config(config_path=Path("/nonexistent/config.yaml"))
+        assert cfg.web_enabled is False
+        assert cfg.web_port == 9527
+        assert cfg.web_host == "0.0.0.0"
+        assert cfg.web_username is None
+        assert cfg.web_password is None
+
+    def test_web_env_overrides(self):
+        """WEB_ENABLED and WEB_PORT env vars should work."""
+        env = {"PLEX_TOKEN": "tok", "WEB_ENABLED": "true", "WEB_PORT": "3000"}
+        with patch.dict("os.environ", env, clear=False):
+            cfg = load_config(config_path=Path("/nonexistent/config.yaml"))
+        assert cfg.web_enabled is True
+        assert cfg.web_port == 3000
 
 
 # ===================================================================
@@ -131,14 +153,15 @@ class TestRealWorldScenarios:
         assert result.info.stream_id == 1
 
     def test_generic_chinese_no_title(self):
-        """Two Chinese tracks with no title — can't tell CHT from CHS."""
+        """Two Chinese tracks with no title — "second generic" heuristic picks second."""
         streams = [
             SubtitleInfo(stream_id=1, title=None, language_code="chi", language="Chinese", forced=False),
             SubtitleInfo(stream_id=2, title=None, language_code="chi", language="Chinese", forced=False),
         ]
-        # score=10 for both → below threshold → triggers fallback
-        assert select_best(streams, fallback="skip") is None
-        assert select_best(streams, fallback="none") is not None  # sentinel
+        # 2 UNKNOWN_ZH tracks → "second generic" heuristic picks stream 2
+        result = select_best(streams, fallback="skip")
+        assert result is not None
+        assert result.info.stream_id == 2
 
     def test_plex_metadata_traditional(self):
         """Plex sometimes puts variant info in the language description."""
@@ -153,15 +176,18 @@ class TestRealWorldScenarios:
         assert result.info.stream_id == 1
         assert result.score == 90
 
-    def test_forced_cht_deprioritized(self):
-        """If only forced CHT exists (score=50), it should still be picked (> threshold)."""
+    def test_forced_cht_still_selected(self):
+        """Forced CHT (score=50) should still be selected — it's still CHT."""
         streams = [
             SubtitleInfo(stream_id=1, title="繁體中文", language_code="chi",
                          language="Chinese", forced=True),
         ]
         result = select_best(streams, fallback="skip")
-        # score = 100 - 50 = 50, which is NOT > 50, so fallback triggers
-        assert result is None
+        # Category-based selection: CHT is detected regardless of score
+        assert result is not None
+        assert result.info.stream_id == 1
+        assert result.category == SubtitleCategory.CHT
+        assert result.score == 50  # 100 - 50 forced penalty
 
     def test_forced_and_non_forced_cht(self):
         """Both forced and non-forced CHT — should prefer non-forced."""

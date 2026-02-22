@@ -42,9 +42,15 @@ class TestClassifyCHT:
 
     @pytest.mark.parametrize("title", [
         "繁體中文",
+        "繁体中文",       # simplified chars for 繁體
+        "繁体",           # standalone simplified form
+        "中文（繁体）",   # parenthesized simplified form
+        "[BML] 繁体",     # tagged simplified form
         "繁中",
         "繁日雙語",
+        "繁英@Prejudice-Studio",  # Traditional+English bilingual
         "正體中文",
+        "正体中文",       # simplified chars for 正體
         "CHT",
         "cht subtitle",
         "Traditional Chinese",
@@ -56,6 +62,12 @@ class TestClassifyCHT:
         "Hong Kong",
         "HK subtitle",
         "TC",
+        "fanti",          # pinyin for 繁體
+        "JPTC",           # fansub: JP Traditional Chinese
+        "NekomoeKissaten-JPTC",  # fansub compound
+        "官方台湾话字幕",  # Taiwan in Chinese chars (simplified)
+        "台灣國語字幕",    # Taiwan in Chinese chars (traditional)
+        "香港字幕",        # Hong Kong in Chinese chars
     ])
     def test_title_cht_keywords(self, title: str):
         result = classify(_sub(title=title, language_code="chi"))
@@ -78,6 +90,7 @@ class TestClassifyCHS:
         "简体中文",
         "简中",
         "簡體中文",
+        "簡體",           # standalone traditional form
         "CHS",
         "chs subtitle",
         "Simplified Chinese",
@@ -85,6 +98,11 @@ class TestClassifyCHS:
         "zh_CN",
         "GB2312",
         "GBK",
+        "jianti",         # pinyin for 簡體
+        "JPSC",           # fansub: JP Simplified Chinese
+        "NekomoeKissaten-JPSC",  # fansub compound
+        "简日字幕",        # Simplified+Japanese bilingual
+        "简英@Prejudice-Studio",  # Simplified+English bilingual
     ])
     def test_title_chs_keywords(self, title: str):
         result = classify(_sub(title=title, language_code="chi"))
@@ -258,6 +276,38 @@ class TestSelectBestCHT:
         assert result.info.stream_id == 2
         assert result.score == 100
 
+    def test_forced_cht_still_selected(self):
+        """Forced CHT (score 50) should still be selected over UNKNOWN_ZH.
+
+        Regression test for 龍貓 case: forced CHT was excluded by old
+        score > 50 threshold. Now uses category-based selection.
+        """
+        streams = [
+            _sub(stream_id=1, title="诸神繁日字幕", language_code="chi", forced=True),  # CHT, score 50
+            _sub(stream_id=2, language_code="chi", language="Chinese"),  # UNKNOWN_ZH, score 10
+            _sub(stream_id=3, language_code="chi", language="Chinese"),  # UNKNOWN_ZH, score 10
+        ]
+        result = select_best(streams, fallback="skip")
+        assert result is not None
+        assert result.info.stream_id == 1
+        assert result.category == SubtitleCategory.CHT
+        assert result.score == 50  # 100 - 50 forced
+
+    def test_forced_cht_by_content_analysis_selected(self):
+        """CHT detected via content analysis + forced → score 35, still selected."""
+        streams = [
+            _sub(stream_id=1, language_code="chi", language="Chinese", forced=True),
+            _sub(stream_id=2, language_code="eng", language="English"),
+        ]
+        content_map = {
+            1: "你好，這是一個測試。我們今天要學習的課題是關於電影的歷史。",
+        }
+        result = select_best(streams, fallback="skip", content_map=content_map)
+        assert result is not None
+        assert result.info.stream_id == 1
+        assert result.category == SubtitleCategory.CHT
+        assert result.score == 35  # 85 - 50 forced
+
     def test_empty_streams(self):
         assert select_best([]) is None
 
@@ -311,6 +361,143 @@ class TestSelectBestFallback:
         result = select_best(streams, fallback="english")
         assert result is not None
         assert result.category == SubtitleCategory.ENGLISH
+
+    def test_fallback_chs_accepts_unknown_zh(self):
+        """CHS fallback should accept generic Chinese (UNKNOWN_ZH) tracks."""
+        streams = [
+            _sub(stream_id=1, language_code="chi", language="Chinese"),
+            _sub(stream_id=2, language_code="eng", language="English"),
+        ]
+        result = select_best(streams, fallback="chs")
+        assert result is not None
+        assert result.info.stream_id == 1
+        assert result.category == SubtitleCategory.UNKNOWN_ZH
+
+    def test_fallback_chs_prefers_unknown_zh_over_confirmed_chs(self):
+        """UNKNOWN_ZH (score +10) should be preferred over CHS (score -100)."""
+        streams = [
+            _sub(stream_id=1, title="简体中文", language_code="chi"),  # CHS: -100
+            _sub(stream_id=2, language_code="chi", language="Chinese"),  # UNKNOWN_ZH: +10
+            _sub(stream_id=3, language_code="eng", language="English"),
+        ]
+        result = select_best(streams, fallback="chs")
+        assert result is not None
+        assert result.info.stream_id == 2
+        assert result.category == SubtitleCategory.UNKNOWN_ZH
+
+    def test_fallback_chs_still_picks_chs_when_no_unknown(self):
+        """When only confirmed CHS exists, still picks it."""
+        streams = [
+            _sub(stream_id=1, title="简体中文", language_code="chi"),
+            _sub(stream_id=2, language_code="eng", language="English"),
+        ]
+        result = select_best(streams, fallback="chs")
+        assert result is not None
+        assert result.info.stream_id == 1
+        assert result.category == SubtitleCategory.CHS
+
+
+# ===================================================================
+# select_best() — "Second Generic" heuristic
+# ===================================================================
+
+class TestSecondGeneric:
+    """When 2+ unknown Chinese tracks exist, pick the second by stream order."""
+
+    def test_two_unknown_zh_picks_second(self):
+        """Classic MKV layout: CHS first, CHT second — heuristic picks second."""
+        streams = [
+            _sub(stream_id=10, language_code="chi", language="Chinese"),
+            _sub(stream_id=20, language_code="chi", language="Chinese"),
+            _sub(stream_id=30, language_code="eng", language="English"),
+        ]
+        result = select_best(streams, fallback="skip")
+        assert result is not None
+        assert result.info.stream_id == 20
+
+    def test_three_unknown_zh_still_picks_second(self):
+        streams = [
+            _sub(stream_id=10, language_code="chi", language="Chinese"),
+            _sub(stream_id=20, language_code="chi", language="Chinese"),
+            _sub(stream_id=30, language_code="chi", language="Chinese"),
+        ]
+        result = select_best(streams, fallback="skip")
+        assert result is not None
+        assert result.info.stream_id == 20
+
+    def test_one_unknown_zh_no_heuristic(self):
+        """Only 1 unknown Chinese → heuristic doesn't fire, falls to fallback."""
+        streams = [
+            _sub(stream_id=1, language_code="chi", language="Chinese"),
+            _sub(stream_id=2, language_code="eng", language="English"),
+        ]
+        result = select_best(streams, fallback="skip")
+        assert result is None  # skip fallback, no heuristic
+
+    def test_heuristic_fires_even_with_fallback_skip(self):
+        """Second-generic applies before fallback — even fallback=skip gets a result."""
+        streams = [
+            _sub(stream_id=1, language_code="chi", language="Chinese"),
+            _sub(stream_id=2, language_code="chi", language="Chinese"),
+        ]
+        result = select_best(streams, fallback="skip")
+        assert result is not None
+        assert result.info.stream_id == 2
+
+    def test_heuristic_skipped_when_cht_found(self):
+        """If CHT is confidently detected, heuristic is irrelevant."""
+        streams = [
+            _sub(stream_id=1, language_code="chi", language="Chinese"),
+            _sub(stream_id=2, language_code="chi", language="Chinese"),
+            _sub(stream_id=3, title="繁體中文", language_code="chi"),
+        ]
+        result = select_best(streams, fallback="skip")
+        assert result is not None
+        assert result.info.stream_id == 3  # confident CHT wins
+        assert result.score == 100
+
+    def test_confirmed_chs_not_counted_as_unknown(self):
+        """CHS + 1 UNKNOWN_ZH → only 1 unknown, heuristic doesn't fire."""
+        streams = [
+            _sub(stream_id=1, title="简体中文", language_code="chi"),  # CHS
+            _sub(stream_id=2, language_code="chi", language="Chinese"),  # UNKNOWN_ZH
+        ]
+        result = select_best(streams, fallback="skip")
+        assert result is None  # 1 unknown, no heuristic, skip
+
+    def test_external_preferred_over_embedded_unknown(self):
+        """External SRT (+2 bonus) should beat embedded PGS in 2nd-generic.
+
+        Regression test for 猩球崛起 case: 2 embedded PGS + 1 external SRT,
+        all UNKNOWN_ZH. External SRT (score 12) should be preferred over
+        the stream_id[1] heuristic (score 10).
+        """
+        streams = [
+            SubtitleInfo(stream_id=100, title=None, language_code="chi",
+                         language="Chinese"),  # embedded PGS, score 10
+            SubtitleInfo(stream_id=200, title=None, language_code="chi",
+                         language="Chinese"),  # embedded PGS, score 10
+            SubtitleInfo(stream_id=300, title=None, language_code="chi",
+                         language="Chinese", key="/library/streams/99"),  # external SRT, score 12
+        ]
+        result = select_best(streams, fallback="skip")
+        assert result is not None
+        assert result.info.stream_id == 300  # external wins
+        assert result.score == 12  # 10 + 2 external bonus
+
+    def test_all_embedded_still_uses_stream_order(self):
+        """When all UNKNOWN_ZH are embedded (same score), stream_id[1] heuristic applies."""
+        streams = [
+            SubtitleInfo(stream_id=100, title=None, language_code="chi",
+                         language="Chinese"),
+            SubtitleInfo(stream_id=200, title=None, language_code="chi",
+                         language="Chinese"),
+            SubtitleInfo(stream_id=300, title=None, language_code="chi",
+                         language="Chinese"),
+        ]
+        result = select_best(streams, fallback="skip")
+        assert result is not None
+        assert result.info.stream_id == 200  # second by stream_id
 
 
 # ===================================================================

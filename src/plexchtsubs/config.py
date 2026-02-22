@@ -53,6 +53,12 @@ class Config:
     # Watch mode (real-time WebSocket listener)
     watch_enabled: bool = False
     watch_debounce: float = 5.0  # seconds to batch events before processing
+    # Web UI (Phase 3)
+    web_enabled: bool = False
+    web_host: str = "0.0.0.0"
+    web_port: int = 9527
+    web_username: Optional[str] = None  # Basic Auth — None disables auth
+    web_password: Optional[str] = None
 
 
 def _load_yaml(path: Path) -> dict:
@@ -112,6 +118,19 @@ def _flatten_yaml(data: dict) -> dict:
         if "debounce" in watch:
             flat["watch_debounce"] = float(watch["debounce"])
 
+    web = data.get("web", {})
+    if isinstance(web, dict):
+        if "enabled" in web:
+            flat["web_enabled"] = bool(web["enabled"])
+        if "host" in web:
+            flat["web_host"] = str(web["host"])
+        if "port" in web:
+            flat["web_port"] = int(web["port"])
+        if "username" in web:
+            flat["web_username"] = web["username"] or None
+        if "password" in web:
+            flat["web_password"] = web["password"] or None
+
     return flat
 
 
@@ -128,6 +147,11 @@ def _from_env() -> dict:
         "SCHEDULE_CRON": "schedule_cron",
         "WATCH_ENABLED": "watch_enabled",
         "WATCH_DEBOUNCE": "watch_debounce",
+        "WEB_ENABLED": "web_enabled",
+        "WEB_HOST": "web_host",
+        "WEB_PORT": "web_port",
+        "WEB_USERNAME": "web_username",
+        "WEB_PASSWORD": "web_password",
     }
     result = {}
     for env_key, config_key in env_map.items():
@@ -137,9 +161,9 @@ def _from_env() -> dict:
         # Type coercion
         if config_key == "scan_range_days":
             result[config_key] = int(val) if val else None
-        elif config_key == "workers":
+        elif config_key in ("workers", "web_port"):
             result[config_key] = int(val)
-        elif config_key in ("force_overwrite", "schedule_enabled", "watch_enabled"):
+        elif config_key in ("force_overwrite", "schedule_enabled", "watch_enabled", "web_enabled"):
             result[config_key] = val.lower() in ("1", "true", "yes")
         elif config_key == "watch_debounce":
             result[config_key] = float(val)
@@ -164,6 +188,8 @@ def _from_cli(args) -> dict:
         "schedule_cron": "schedule_cron",
         "watch_enabled": "watch_enabled",
         "watch_debounce": "watch_debounce",
+        "web_enabled": "web_enabled",
+        "web_port": "web_port",
     }
     result = {}
     for arg_name, config_key in mapping.items():

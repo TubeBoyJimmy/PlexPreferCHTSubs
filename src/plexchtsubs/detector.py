@@ -48,17 +48,19 @@ class SubtitleResult:
 # Word boundaries (\b) prevent false positives: "tc" won't match "etc"
 RE_CHT = re.compile(
     r'\bcht\b|\btc\b|zh[_-]?hant|zh[_-]?tw'
-    r'|traditional|big5'
-    r'|繁體|繁中|繁日|正體'
-    r'|taiwan|hong\s*kong|\bhk\b',
+    r'|traditional|big5|\bfanti\b'
+    r'|繁體|繁体|繁中|繁日|繁英|正體|正体'
+    r'|taiwan|hong\s*kong|\bhk\b|台灣|台湾|香港'
+    r'|jptc',
     re.IGNORECASE,
 )
 
 RE_CHS = re.compile(
     r'\bchs\b|\bsc\b|zh[_-]?hans|zh[_-]?cn'
-    r'|simplified'
-    r'|简体|简中|簡體中文'
-    r'|gb2312|gbk',
+    r'|simplified|\bjianti\b'
+    r'|简体|简中|簡體|简日|简英'
+    r'|gb2312|gbk'
+    r'|jpsc',
     re.IGNORECASE,
 )
 
@@ -208,7 +210,7 @@ def select_best(
 ) -> Optional[SubtitleResult]:
     """Pick the best subtitle from a list of streams.
 
-    Returns the best CHT subtitle if one exists (score > 50).
+    Returns the best CHT subtitle if one exists (by category).
     Otherwise, applies the fallback strategy:
         "skip"    → return None (don't change anything)
         "english" → return best English subtitle, or None
@@ -224,10 +226,27 @@ def select_best(
     _cmap = content_map or {}
     results = [classify(s, content=_cmap.get(s.stream_id)) for s in streams]
 
-    # Find best CHT candidate (score > 50 means confident CHT)
-    cht_candidates = [r for r in results if r.score > 50]
+    # Find best CHT candidate (by category — score is only for ranking)
+    cht_candidates = [r for r in results if r.category == SubtitleCategory.CHT]
     if cht_candidates:
         return max(cht_candidates, key=lambda r: r.score)
+
+    # "Second Generic" heuristic: when 2+ unknown Chinese tracks exist
+    # with no distinguishing metadata, the second track by stream order
+    # is typically CHT (common MKV convention: CHS first, CHT second).
+    # Exception: if an external subtitle (has key → +2 bonus) scores higher,
+    # prefer it — the user likely added it intentionally, and the scanner
+    # can attempt content analysis on it.
+    unknown_zh = [r for r in results if r.category == SubtitleCategory.UNKNOWN_ZH]
+    if len(unknown_zh) >= 2:
+        top_score = max(r.score for r in unknown_zh)
+        top_candidates = [r for r in unknown_zh if r.score == top_score]
+        if len(top_candidates) < len(unknown_zh):
+            # Score difference exists (e.g., external bonus) — pick highest
+            return max(unknown_zh, key=lambda r: r.score)
+        # All equal scores — fall back to second-by-stream-order heuristic
+        unknown_zh.sort(key=lambda r: r.info.stream_id)
+        return unknown_zh[1]
 
     # No confident CHT found — apply fallback
     if fallback == "skip":
@@ -241,9 +260,15 @@ def select_best(
         return None
 
     if fallback == "chs":
-        chs = [r for r in results if r.category == SubtitleCategory.CHS]
+        # Accept both confirmed-CHS and unknown-variant Chinese
+        # (UNKNOWN_ZH are generic "中文" tracks — "at least it's Chinese").
+        chs = [
+            r for r in results
+            if r.category in (SubtitleCategory.CHS, SubtitleCategory.UNKNOWN_ZH)
+        ]
         if chs:
-            # Pick the "least negative" CHS (closest to 0)
+            # Highest score wins: UNKNOWN_ZH (+10) preferred over CHS (-100),
+            # since an unknown track might actually be Traditional.
             return max(chs, key=lambda r: r.score)
         return None
 

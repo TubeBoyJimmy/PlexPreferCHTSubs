@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlexPreferCHTSubs</title>
+<style>
+  :root {
+    --bg: #1f1f1f;
+    --surface: #282828;
+    --card: #3d3d3d;
+    --accent: #e5a00d;
+    --accent-hover: #cc7b19;
+    --green: #4ecca3;
+    --yellow: #e5a00d;
+    --red: #cf3838;
+    --cyan: #5db8d0;
+    --text: #eaeaea;
+    --text-dim: #999;
+    --border: #404040;
+    --radius: 4px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0;
+  }
+  header {
+    background: #181818;
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.3px; }
+  header h1 .plex { color: var(--accent); font-weight: 700; }
+  header h1 small { color: var(--text-dim); font-size: 11px; font-weight: 400; margin-left: 8px; }
+  header .server-info { color: var(--text-dim); font-size: 12px; }
+  .container { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
+
+  /* Status cards */
+  .status-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .status-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .status-card .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; }
+  .status-card .value { font-size: 16px; font-weight: 600; margin-top: 6px; display: flex; align-items: center; }
+  .indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; flex-shrink: 0; }
+  .indicator.on { background: var(--green); box-shadow: 0 0 6px rgba(78, 204, 163, 0.5); }
+  .indicator.off { background: var(--red); }
+  .indicator.idle { background: #666; }
+
+  /* Action panel */
+  .action-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .action-panel h2 { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 14px; }
+  .action-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover:not(:disabled) { background: #4a4a4a; }
+  select, input[type="number"] {
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 7px 10px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  select:focus, input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+
+  /* Progress */
+  .progress-bar {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 20px;
+    margin-bottom: 20px;
+  }
+  .progress-bar.active { display: block; }
+  .progress-bar .bar-track {
+    height: 3px;
+    background: var(--card);
+    border-radius: 2px;
+    margin: 10px 0 4px;
+    overflow: hidden;
+  }
+  .progress-bar .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.5s ease;
+    width: 0%;
+  }
+  .progress-bar .bar-fill.indeterminate {
+    width: 30%;
+    animation: slide 1.5s infinite ease-in-out;
+  }
+  @keyframes slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+  .progress-text { font-size: 12px; color: var(--text-dim); }
+
+  /* Section card */
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .section h2 { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 14px; }
+
+  /* Stats grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 8px;
+  }
+  .stat-item { text-align: center; padding: 12px 8px; background: var(--bg); border-radius: var(--radius); border: 1px solid var(--border); }
+  .stat-item .num { font-size: 22px; font-weight: 700; }
+  .stat-item .lbl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+  .stat-item .num.green { color: var(--green); }
+  .stat-item .num.red { color: var(--red); }
+  .stat-item .num.yellow { color: var(--yellow); }
+  .stat-item .num.cyan { color: var(--cyan); }
+
+  /* History table */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; padding: 8px 10px; color: var(--text-dim); border-bottom: 1px solid var(--border); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  tr:hover td { background: rgba(255,255,255,0.03); }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .tag-manual { background: rgba(93,184,208,0.15); color: var(--cyan); }
+  .tag-cron { background: rgba(229,160,13,0.15); color: var(--yellow); }
+  .tag-watcher { background: rgba(78,204,163,0.15); color: var(--green); }
+  .tag-dry { background: rgba(153,153,153,0.15); color: var(--text-dim); }
+
+  /* Config list */
+  .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
+  .config-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .config-item .key { color: var(--text-dim); font-size: 12px; }
+  .config-item .val { font-size: 12px; font-weight: 500; }
+
+  .empty { color: var(--text-dim); font-size: 13px; padding: 24px 0; text-align: center; }
+
+  @media (max-width: 600px) {
+    .config-grid { grid-template-columns: 1fr; }
+    .action-row { flex-direction: column; align-items: stretch; }
+    .action-row .btn { text-align: center; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1><span class="plex">Plex</span>PreferCHTSubs</h1>
+    <div class="server-info" id="server-info">Connecting...</div>
+  </header>
+
+  <div class="container">
+    <!-- Status Cards -->
+    <div class="status-row">
+      <div class="status-card">
+        <div class="label">Plex Server</div>
+        <div class="value" id="plex-status"><span class="indicator idle"></span>--</div>
+      </div>
+      <div class="status-card">
+        <div class="label">Watcher</div>
+        <div class="value" id="watcher-status"><span class="indicator idle"></span>--</div>
+      </div>
+      <div class="status-card">
+        <div class="label">Scan</div>
+        <div class="value" id="scan-status-card"><span class="indicator idle"></span>Idle</div>
+      </div>
+      <div class="status-card">
+        <div class="label">Schedule</div>
+        <div class="value" id="schedule-status">--</div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-panel">
+      <h2>Scan</h2>
+      <div class="action-row">
+        <button class="btn btn-primary" id="btn-scan" onclick="triggerScan(false)">Scan Now</button>
+        <button class="btn btn-secondary" id="btn-dry" onclick="triggerScan(true)">Dry Run</button>
+        <select id="sel-range">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="0">Full scan</option>
+        </select>
+        <select id="sel-fallback">
+          <option value="chs">Fallback: CHS</option>
+          <option value="english">Fallback: English</option>
+          <option value="skip">Fallback: Skip</option>
+          <option value="none">Fallback: None</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-bar" id="progress">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="progress-text" id="progress-text">Scanning...</span>
+        <span class="progress-text" id="progress-elapsed"></span>
+      </div>
+      <div class="bar-track"><div class="bar-fill indeterminate" id="progress-fill"></div></div>
+    </div>
+
+    <!-- Last Scan Stats -->
+    <div class="section" id="last-scan-section" style="display:none;">
+      <h2>Last Scan</h2>
+      <div class="stats-grid" id="last-scan-stats"></div>
+      <div style="margin-top:10px; font-size:11px; color:var(--text-dim);" id="last-scan-meta"></div>
+    </div>
+
+    <!-- History -->
+    <div class="section">
+      <h2>History</h2>
+      <div id="history-container">
+        <div class="empty">No scan history yet.</div>
+      </div>
+    </div>
+
+    <!-- Config -->
+    <div class="section">
+      <h2>Configuration</h2>
+      <div class="config-grid" id="config-grid">
+        <div class="empty">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API = '';  // Same origin
+let pollTimer = null;
+
+// ----- Fetch helpers -----
+async function api(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+async function apiPost(path, body) {
+  const r = await fetch(API + path, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
+// ----- Status -----
+async function refreshStatus() {
+  try {
+    const s = await api('/api/status');
+
+    // Server info
+    document.getElementById('server-info').textContent =
+      s.plex.connected ? `${s.plex.server_name} (v${s.plex.server_version})` : 'Disconnected';
+
+    // Version
+    document.querySelector('header h1').innerHTML =
+      `<span class="plex">Plex</span>PreferCHTSubs<small> v${s.version}</small>`;
+
+    // Plex card
+    const plexEl = document.getElementById('plex-status');
+    plexEl.innerHTML = s.plex.connected
+      ? '<span class="indicator on"></span>Connected'
+      : '<span class="indicator off"></span>Disconnected';
+
+    // Watcher card
+    const watchEl = document.getElementById('watcher-status');
+    if (s.watcher) {
+      watchEl.innerHTML = s.watcher.running
+        ? '<span class="indicator on"></span>Active'
+        : '<span class="indicator off"></span>Stopped';
+    } else {
+      watchEl.innerHTML = '<span class="indicator idle"></span>Disabled';
+    }
+
+    // Scan card
+    const scanEl = document.getElementById('scan-status-card');
+    if (s.scan.running) {
+      scanEl.innerHTML = '<span class="indicator on"></span>Running';
+    } else {
+      scanEl.innerHTML = '<span class="indicator idle"></span>Idle';
+    }
+
+    // Schedule card
+    const schedEl = document.getElementById('schedule-status');
+    schedEl.textContent = s.schedule.enabled ? `Cron: ${s.schedule.cron}` : 'Disabled';
+
+    // Button state
+    document.getElementById('btn-scan').disabled = s.scan.running;
+    document.getElementById('btn-dry').disabled = s.scan.running;
+  } catch (e) {
+    console.error('Status fetch failed:', e);
+  }
+}
+
+// ----- Scan -----
+async function triggerScan(dryRun) {
+  const range = parseInt(document.getElementById('sel-range').value);
+  const fallback = document.getElementById('sel-fallback').value;
+  try {
+    await apiPost('/api/scan', {
+      dry_run: dryRun,
+      scan_range: range,
+      fallback: fallback,
+    });
+    showProgress();
+    startPolling();
+  } catch (e) {
+    alert('Failed to start scan: ' + e.message);
+  }
+}
+
+function showProgress() {
+  document.getElementById('progress').classList.add('active');
+  document.getElementById('btn-scan').disabled = true;
+  document.getElementById('btn-dry').disabled = true;
+}
+
+function hideProgress() {
+  document.getElementById('progress').classList.remove('active');
+  document.getElementById('btn-scan').disabled = false;
+  document.getElementById('btn-dry').disabled = false;
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollScanStatus, 2000);
+}
+
+async function pollScanStatus() {
+  try {
+    const s = await api('/api/scan/status');
+    if (s.running) {
+      const text = s.processed != null ? `Processing... (${s.processed} items)` : 'Scanning...';
+      document.getElementById('progress-text').textContent = text;
+      document.getElementById('progress-elapsed').textContent =
+        s.elapsed ? `${s.elapsed}s` : '';
+    } else {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      hideProgress();
+      refreshStatus();
+      refreshHistory();
+    }
+  } catch (e) {
+    console.error('Poll failed:', e);
+  }
+}
+
+// ----- History -----
+async function refreshHistory() {
+  try {
+    const rows = await api('/api/history');
+    const container = document.getElementById('history-container');
+
+    if (!rows.length) {
+      container.innerHTML = '<div class="empty">No scan history yet.</div>';
+      document.getElementById('last-scan-section').style.display = 'none';
+      return;
+    }
+
+    // Last scan stats
+    const last = rows[0];
+    showLastScan(last);
+
+    // Table
+    let html = `<table>
+      <tr><th>Time</th><th>Trigger</th><th>Total</th><th>Changed</th><th>Fallback</th><th>Errors</th><th>Duration</th></tr>`;
+    for (const r of rows) {
+      const time = r.finished_at ? formatTime(r.finished_at) : (r.started_at ? formatTime(r.started_at) + ' ...' : '--');
+      const trigger = tagFor(r.trigger, r.dry_run);
+      const dur = r.duration != null ? r.duration.toFixed(1) + 's' : '--';
+      html += `<tr>
+        <td>${time}</td>
+        <td>${trigger}</td>
+        <td>${r.total}</td>
+        <td>${r.changed || 0}</td>
+        <td>${r.fallback_used || 0}</td>
+        <td>${r.errors ? '<span style="color:var(--red)">' + r.errors + '</span>' : '0'}</td>
+        <td>${dur}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    container.innerHTML = html;
+  } catch (e) {
+    console.error('History fetch failed:', e);
+  }
+}
+
+function showLastScan(r) {
+  const sec = document.getElementById('last-scan-section');
+  sec.style.display = 'block';
+  document.getElementById('last-scan-stats').innerHTML = `
+    <div class="stat-item"><div class="num">${r.total}</div><div class="lbl">Total</div></div>
+    <div class="stat-item"><div class="num green">${r.changed || 0}</div><div class="lbl">Changed</div></div>
+    <div class="stat-item"><div class="num">${r.skipped || 0}</div><div class="lbl">Skipped</div></div>
+    <div class="stat-item"><div class="num cyan">${r.fallback_used || 0}</div><div class="lbl">Fallback</div></div>
+    <div class="stat-item"><div class="num ${r.errors ? 'red' : ''}">${r.errors || 0}</div><div class="lbl">Errors</div></div>
+  `;
+  const dur = r.duration != null ? r.duration.toFixed(1) + 's' : '--';
+  const time = r.finished_at ? formatTime(r.finished_at) : '--';
+  const trigger = r.dry_run ? `${r.trigger} (dry-run)` : r.trigger;
+  document.getElementById('last-scan-meta').textContent = `${time} | ${trigger} | ${dur}`;
+}
+
+function tagFor(trigger, dryRun) {
+  const cls = trigger === 'cron' ? 'tag-cron' : trigger === 'watcher' ? 'tag-watcher' : 'tag-manual';
+  let html = `<span class="tag ${cls}">${trigger}</span>`;
+  if (dryRun) html += ' <span class="tag tag-dry">dry</span>';
+  return html;
+}
+
+function formatTime(iso) {
+  if (!iso) return '--';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const mo = String(d.getMonth()+1).padStart(2,'0');
+  const da = String(d.getDate()).padStart(2,'0');
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return `${mo}-${da} ${hh}:${mm}`;
+}
+
+// ----- Config -----
+async function refreshConfig() {
+  try {
+    const c = await api('/api/config');
+    const grid = document.getElementById('config-grid');
+    const items = [
+      ['Plex URL', c.plex_url],
+      ['Scan Range', c.scan_range_days != null ? c.scan_range_days + ' days' : 'Full'],
+      ['Fallback', c.fallback],
+      ['Workers', c.workers],
+      ['Force Overwrite', c.force_overwrite ? 'Yes' : 'No'],
+      ['Dry Run', c.dry_run ? 'Yes' : 'No'],
+      ['Schedule', c.schedule_enabled ? c.schedule_cron : 'Disabled'],
+      ['Watcher', c.watch_enabled ? `On (${c.watch_debounce}s)` : 'Off'],
+      ['Web Port', c.web_port],
+      ['Web Auth', c.web_auth_enabled ? 'Enabled' : 'Disabled'],
+    ];
+    grid.innerHTML = items.map(([k, v]) =>
+      `<div class="config-item"><span class="key">${k}</span><span class="val">${v}</span></div>`
+    ).join('');
+
+    // Also set fallback select to match config
+    const sel = document.getElementById('sel-fallback');
+    for (const opt of sel.options) {
+      if (opt.value === c.fallback) { opt.selected = true; break; }
+    }
+    // Set range
+    const rangeSel = document.getElementById('sel-range');
+    const rv = c.scan_range_days != null ? String(c.scan_range_days) : '0';
+    for (const opt of rangeSel.options) {
+      if (opt.value === rv) { opt.selected = true; break; }
+    }
+  } catch (e) {
+    console.error('Config fetch failed:', e);
+  }
+}
+
+// ----- Init -----
+async function init() {
+  await Promise.all([refreshStatus(), refreshHistory(), refreshConfig()]);
+  // Check if a scan is already running
+  try {
+    const s = await api('/api/scan/status');
+    if (s.running) { showProgress(); startPolling(); }
+  } catch (e) {}
+  // Auto-refresh status every 5 seconds
+  setInterval(refreshStatus, 5000);
+}
+
+init();
+</script>
+</body>
+</html>

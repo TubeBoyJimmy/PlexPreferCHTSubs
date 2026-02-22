@@ -22,7 +22,8 @@ Plex 將中文字幕視為單一語言，當媒體檔案同時包含繁體和簡
 - **多執行緒掃描** — 平行處理大型媒體庫
 - **預覽模式** — 套用前先預覽所有變更
 - **彈性設定** — 支援 CLI 參數、環境變數、YAML 設定檔
-- **Docker 支援** — 單次執行或常駐服務（cron + watcher）
+- **Web UI 儀表板** — 瀏覽器介面，遠端監控狀態及手動觸發掃描
+- **Docker 支援** — 單次執行或常駐服務（cron + watcher + Web UI）
 
 ## 快速開始
 
@@ -68,6 +69,12 @@ schedule:
 watch:
   enabled: false
   debounce: 5.0                  # 批次處理前等待秒數
+
+web:
+  enabled: false
+  port: 9527
+  # username: "admin"            # 取消註解以啟用 Basic Auth
+  # password: "changeme"
 ```
 
 設定優先順序：**CLI 參數 > 環境變數 > config.yaml > 預設值**
@@ -90,13 +97,13 @@ python run.py --force
 
 ## 偵測原理
 
-每條字幕軌會得到一個信心分數，分數最高的繁體中文字幕（超過 50 分）會被選為預設。
+每條字幕軌會得到一個信心分數，分數最高的繁體中文字幕會被選為預設。
 
 ### 評分表
 
 | 分數 | 來源 | 說明 |
 |-----:|------|------|
-| +100 | 標題正規匹配 | 確定繁中 — 標題含有 繁體、CHT、Traditional、BIG5、zh-TW 等 |
+| +100 | 標題正規匹配 | 確定繁中 — 標題含有關鍵字（見下表） |
 | +95 | 語言代碼 | 繁中代碼：`zh-tw`、`zh-hant` |
 | +90 | 語言描述 | 繁中描述：「Traditional」、「Taiwan」、「Hong Kong」 |
 | +85 | 內容分析 | 字元頻率分析判定為繁中（繁體字元 ≥70%） |
@@ -104,12 +111,25 @@ python run.py --force
 | 0 | 非中文 | 不是中文字幕 |
 | -100 | 確定簡中 | 確定簡體中文（標題、代碼、描述或內容分析判定） |
 
+### 標題關鍵字
+
+| 分類 | 關鍵字 |
+|------|--------|
+| 繁中 | `CHT`、`TC`、`JPTC`、`繁體`、`繁体`、`繁中`、`繁日`、`繁英`、`正體`、`正体`、`Traditional`、`BIG5`、`fanti`、`zh-Hant`、`zh-TW`、`Taiwan`、`台灣`、`台湾`、`Hong Kong`、`香港`、`HK` |
+| 簡中 | `CHS`、`SC`、`JPSC`、`简体`、`简中`、`簡體`、`简日`、`简英`、`Simplified`、`jianti`、`zh-Hans`、`zh-CN`、`GB2312`、`GBK` |
+
 ### 修正項
 
 | 修正項 | 效果 | 原因 |
 |--------|------|------|
 | Forced 字幕 | -50 扣分 | 避免選到只含關鍵對白的強制字幕 |
 | 外掛字幕檔 | +2 加分 | 外掛 .srt/.ass 通常是刻意添加的，品質較佳 |
+
+### 選取邏輯
+
+1. **繁中分類優先** — 任何被分類為 CHT 的字幕軌都會被選取（多條 CHT 時選分數最高的）
+2. **「第二軌」啟發式** — 當有 2 條以上的泛中文字幕且無 metadata 可判斷時，選取第二軌（常見 MKV 慣例：第一軌簡中、第二軌繁中）。外掛字幕因加分較高會優先被選取。
+3. **備援策略** — 找不到繁中時，套用設定的備援策略
 
 ### 內容分析
 
@@ -119,7 +139,7 @@ python run.py --force
 - **≤30% 繁體字元** → 簡中（-100 分）
 - **30-70%** → 無法判斷，觸發備援策略
 - 跳過圖片式字幕（PGS、VobSub）
-- 支援 UTF-8、Big5、GB18030 編碼
+- 支援 UTF-8、UTF-16、Big5、GB18030 編碼
 - 每條字幕最多下載 50KB — 快速且輕量
 
 ## 備援策略
@@ -156,6 +176,10 @@ python run.py --force
   --no-watch              停用監控（即使使用 --schedule）
   --watch-debounce SECS   批次處理前的等待秒數（預設: 5.0）
 
+Web UI:
+  --web                   啟用 Web UI 儀表板（預設 port: 9527）
+  --web-port PORT         Web UI 埠號（預設: 9527）
+
 輸出:
   --dry-run               預覽模式，不實際變更
   --log-file PATH         日誌輸出到檔案
@@ -182,6 +206,30 @@ python run.py --schedule --no-watch
 
 自動重連：若 WebSocket 斷線，監控器會以指數退避方式自動重連（2 秒 → 4 秒 → 8 秒 → 最長 5 分鐘）。
 
+## Web UI
+
+瀏覽器介面的儀表板，適合 Docker / NAS 環境下遠端監控和手動操作。
+
+```bash
+# 僅 Web UI
+python run.py --web
+
+# Web UI + 排程 + 監控（完整服務模式）
+python run.py --schedule --web
+
+# 自訂 port
+python run.py --web --web-port 3000
+```
+
+開啟瀏覽器前往 `http://你的伺服器:9527` 即可存取。
+
+功能：
+- 即時顯示 Plex 連線狀態、Watcher 狀態、掃描進度
+- 一鍵觸發手動掃描（可選 dry-run）
+- 掃描歷史紀錄及統計
+- 目前設定總覽
+- 可選 Basic Auth 認證（在 config 中設定 `web.username` 和 `web.password`）
+
 ## Docker
 
 ### 單次掃描
@@ -193,7 +241,7 @@ docker compose run --rm plexchtsubs --dry-run
 ### 常駐模式
 
 ```bash
-# 啟動服務（每週 cron 掃描 + 即時監控）
+# 啟動服務（即時監控 + Web UI 儀表板）
 docker compose up -d
 
 # 查看日誌
@@ -203,7 +251,7 @@ docker compose logs -f
 docker compose down
 ```
 
-常駐模式（`--schedule`）啟動時立刻執行一次掃描，之後按 cron 排程每週執行（預設每週日凌晨 3 點）。同時即時監控器持續運行，透過 WebSocket 偵測新增/更新的媒體，即時處理變更的項目。
+Docker Compose 預設指令為 `--watch --web`：即時監控新增媒體並自動處理字幕，同時在 port 9527 提供 Web 儀表板供遠端監控和手動掃描。如需定時 cron 排程，可加入 `--schedule`。
 
 ### 從原始碼建置
 
@@ -242,6 +290,11 @@ sudo docker compose logs -f
 | `SCHEDULE_CRON` | Cron 排程表達式 |
 | `WATCH_ENABLED` | 設為 `true` 啟用即時監控 |
 | `WATCH_DEBOUNCE` | 防抖秒數 |
+| `WEB_ENABLED` | 設為 `true` 啟用 Web UI 儀表板 |
+| `WEB_HOST` | Web UI 綁定位址（預設: `0.0.0.0`） |
+| `WEB_PORT` | Web UI 埠號（預設: `9527`） |
+| `WEB_USERNAME` | Basic Auth 帳號（空白 = 不啟用認證） |
+| `WEB_PASSWORD` | Basic Auth 密碼 |
 
 ## 致謝
 

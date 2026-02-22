@@ -56,6 +56,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Debounce delay for watcher batching (default: 5.0)",
     )
 
+    web = p.add_argument_group("web ui")
+    web.add_argument(
+        "--web", action="store_true", default=None,
+        help="Enable web UI dashboard (default port: 9527)",
+    )
+    web.add_argument(
+        "--web-port", type=int, metavar="PORT",
+        help="Web UI port (default: 9527)",
+    )
+
     output = p.add_argument_group("output")
     output.add_argument("--dry-run", action="store_true", default=None, help="Preview changes without applying")
     output.add_argument("--log-file", help="Write logs to file")
@@ -100,6 +110,16 @@ def main(argv: list[str] | None = None) -> None:
     else:
         args.watch_debounce = None
 
+    # Map --web/--web-port to config fields
+    if getattr(args, "web", None):
+        args.web_enabled = True
+    else:
+        args.web_enabled = None
+    if getattr(args, "web_port", None) is not None:
+        pass  # already set on args
+    else:
+        args.web_port = None
+
     config_path = Path(args.config_file) if args.config_file else None
     config = load_config(cli_args=args, config_path=config_path)
     _setup_logging(config)
@@ -114,8 +134,8 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"\nPlexPreferCHTSubs v{__version__}")
 
-    # Service mode: schedule and/or watch
-    if config.schedule_enabled or config.watch_enabled:
+    # Service mode: schedule, watch, and/or web
+    if config.schedule_enabled or config.watch_enabled or config.web_enabled:
         from plexchtsubs.scheduler import run_service
         run_service(config)
         return

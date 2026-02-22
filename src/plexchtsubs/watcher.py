@@ -39,9 +39,12 @@ class PlexWatcher:
     _MAX_DELAY = 300.0
     _BACKOFF_FACTOR = 2.0
 
-    def __init__(self, plex: PlexServer, config: Config) -> None:
+    def __init__(
+        self, plex: PlexServer, config: Config, *, on_batch_complete=None,
+    ) -> None:
         self._plex = plex
         self._config = config
+        self._on_batch_complete = on_batch_complete
         self._pending: set[int] = set()
         self._lock = threading.Lock()
         self._timer: Optional[threading.Timer] = None
@@ -147,6 +150,12 @@ class PlexWatcher:
 
         duration = time.time() - start
         print_summary(stats, duration)
+
+        if self._on_batch_complete is not None:
+            try:
+                self._on_batch_complete(stats, duration)
+            except Exception:
+                logger.debug("on_batch_complete callback error", exc_info=True)
 
     def _reconnect(self) -> None:
         """Auto-reconnect with exponential backoff."""

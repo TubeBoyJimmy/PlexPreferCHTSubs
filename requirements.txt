@@ -1,5 +1,7 @@
 plexapi>=4.15.0
 requests>=2.28.0
 pyyaml>=6.0
-apscheduler>=3.10.0   # Optional: only needed for --schedule mode
+apscheduler>=3.10.0      # Optional: only needed for --schedule mode
 websocket-client>=1.6.0  # Optional: only needed for --watch mode
+fastapi>=0.100.0         # Optional: only needed for --web mode
+uvicorn>=0.23.0          # Optional: only needed for --web mode

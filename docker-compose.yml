@@ -4,6 +4,10 @@
 #   One-shot scan:   docker compose run --rm plexchtsubs --dry-run
 #   Service mode:    docker compose up -d
 #   View logs:       docker compose logs -f
+#   Web UI:          http://localhost:9527
+#
+# Default: watch mode + web UI (trigger scans from the dashboard).
+# Add --schedule to also run periodic cron scans.
 
 services:
   plexchtsubs:
@@ -17,5 +21,7 @@ services:
         target: /app/config.yaml
         read_only: true
       - /etc/localtime:/etc/localtime:ro
-    # Service mode: run on schedule (comment out for one-shot)
-    command: ["--schedule"]
+    ports:
+      - "9527:9527"
+    # Service mode: watch + web UI (manual scans via dashboard)
+    command: ["--watch", "--web"]

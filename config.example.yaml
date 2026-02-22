@@ -22,3 +22,11 @@ schedule:
 watch:
   enabled: false
   debounce: 5.0                     # Seconds to batch events before processing
+
+# Web UI — browser-based dashboard for status monitoring and manual scans
+web:
+  enabled: false
+  host: "0.0.0.0"
+  port: 9527
+  # username: "admin"               # Uncomment to enable Basic Auth
+  # password: "changeme"
