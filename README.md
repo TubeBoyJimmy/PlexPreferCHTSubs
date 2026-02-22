@@ -1,35 +1,42 @@
 # PlexPreferCHTSubs
 
-**Automatically set Traditional Chinese (繁體中文) as the preferred subtitle in Plex.**
+> **[中文版 README](README.zh-TW.md)**
 
-自動掃描 Plex 媒體庫，將所有影片和劇集的預設字幕設為繁體中文。
+**Automatically set Traditional Chinese (繁體中文) as the preferred subtitle in Plex.**
 
 ---
 
-## Why? / 為什麼需要這個工具？
+## Why?
 
-Plex treats Chinese subtitles as a single language and often defaults to Simplified Chinese (簡體中文) when multiple Chinese subtitle tracks are available. There is no built-in way to prefer Traditional Chinese.
+Plex treats Chinese subtitles as a single language and often defaults to Simplified Chinese when multiple Chinese subtitle tracks are available. There is no built-in way to prefer Traditional Chinese.
 
-Plex 將中文字幕視為單一語言，當媒體檔案同時包含繁體和簡體字幕時，往往預設選擇簡體中文。Plex 沒有內建的方式讓使用者偏好繁體中文字幕。
+This tool scans your Plex library, identifies Traditional Chinese subtitle tracks using a multi-layered scoring system, and sets them as the default.
 
-This tool scans your Plex library, identifies Traditional Chinese subtitle tracks using a smart scoring system, and sets them as the default.
+## Features
 
-此工具掃描你的 Plex 媒體庫，透過智慧評分系統辨識繁體中文字幕軌，並將其設為預設。
-
-## Features / 功能
-
-- **Smart CHT/CHS detection** — Regex + language metadata scoring to distinguish 繁體 from 簡體
-- **Configurable fallback** — When no CHT subtitle is found: skip, use English, accept CHS, or disable subtitles
+- **Smart CHT/CHS detection** — Multi-layered scoring: title regex, language metadata, and character frequency analysis
+- **Content analysis** — For unlabeled Chinese subtitles (just "中文"), downloads and analyzes subtitle text to distinguish Traditional from Simplified using 90 character pairs
+- **External subtitle preference** — Prioritizes external subtitle files (.srt/.ass) over embedded MKV tracks
+- **Real-time watcher** — WebSocket listener detects new/updated media instantly (no Plex Pass required)
+- **Configurable fallback** — When no CHT subtitle is found: accept CHS, use English, skip, or disable
 - **Multi-threaded scanning** — Process large libraries quickly with parallel workers
-- **Scan range** — Only process recently updated items, or do a full library scan
 - **Dry-run mode** — Preview all changes before applying
 - **Flexible config** — CLI arguments, environment variables, or YAML config file
-- **Real-time watcher** — WebSocket listener detects new/updated media instantly (no Plex Pass required)
-- **Docker-ready** — Run as a one-shot container or schedule periodic scans
+- **Docker-ready** — One-shot container or persistent service with cron + watcher
 
-## Quick Start / 快速開始
+## Quick Start
 
-### Quick Run / 直接執行（不需安裝）
+### Option A: Standalone exe (Windows)
+
+Download `plexchtsubs.exe` from [Releases](https://github.com/TubeBoyJimmy/PlexPreferCHTSubs/releases). No Python installation required.
+
+```bash
+# Place config.yaml in the same directory as the exe, then:
+plexchtsubs.exe --dry-run
+plexchtsubs.exe --help
+```
+
+### Option B: Python
 
 ```bash
 git clone https://github.com/TubeBoyJimmy/PlexPreferCHTSubs.git
@@ -38,66 +45,93 @@ pip install -r requirements.txt
 python run.py --help
 ```
 
-### Install / 安裝（進階，可選）
+### Configure
 
-```bash
-pip install -e .
-# 安裝後可直接使用：
-plexchtsubs --help
-python -m plexchtsubs --help
-```
-
-### Usage / 使用方式
-
-```bash
-# Basic — scan recent 30 days
-python run.py --plex-url http://localhost:32400 --plex-token YOUR_TOKEN
-
-# Dry run — preview only, don't change anything
-python run.py --dry-run --scan-range 30
-
-# Full scan, force overwrite, fall back to English if no CHT found
-python run.py --scan-range 0 --force --fallback english
-
-# Using environment variables (Docker-friendly)
-export PLEX_URL=http://192.168.1.100:32400
-export PLEX_TOKEN=your-token
-plexchtsubs
-```
-
-Or run as a Python module:
-
-```bash
-python -m plexchtsubs --help
-```
-
-### Config File / 設定檔
-
-Copy `config.example.yaml` to `config.yaml` and edit:
+Copy `config.example.yaml` to `config.yaml` and fill in your Plex URL and token:
 
 ```yaml
 plex:
   url: "http://localhost:32400"
-  token: "your-token-here"
+  token: "your-token-here"       # https://www.plexopedia.com/plex-media-server/general/plex-token/
 
 scan:
-  range_days: 30
-  fallback: skip       # skip | english | chs | none
+  range_days: 30                 # Scan items updated within N days (null = full scan)
+  fallback: chs                  # chs | english | skip | none
   force_overwrite: false
 
 workers: 8
 
 schedule:
-  cron: "0 3 * * *"      # daily at 03:00
+  enabled: false
+  cron: "0 3 * * 0"             # Weekly Sunday 03:00
 
 watch:
-  enabled: true           # real-time WebSocket listener
-  debounce: 5.0           # seconds to batch events
+  enabled: false
+  debounce: 5.0                  # Seconds to batch events before processing
 ```
 
 Config priority: **CLI args > Environment variables > config.yaml > defaults**
 
-## CLI Options / 命令列參數
+### Run
+
+```bash
+# Dry run — preview changes without applying
+python run.py --dry-run
+
+# Apply changes (scan recent 30 days, per config default)
+python run.py
+
+# Full scan with fallback to English
+python run.py --scan-range 0 --fallback english
+
+# Force re-evaluate all items (even already-set ones)
+python run.py --force
+```
+
+## How Detection Works
+
+Each subtitle track receives a confidence score. The highest-scoring CHT track (above 50) is selected.
+
+### Scoring Table
+
+| Score | Source | Meaning |
+|------:|--------|---------|
+| +100 | Title regex | Definite CHT — title contains 繁體, CHT, Traditional, BIG5, zh-TW, etc. |
+| +95 | Language code | CHT by code: `zh-tw`, `zh-hant` |
+| +90 | Language description | CHT by description: "Traditional", "Taiwan", "Hong Kong" |
+| +85 | Content analysis | CHT detected by character frequency (>=70% Traditional characters) |
+| +10 | Generic Chinese | Unknown variant (code is `chi`/`zho` with no variant info) — triggers fallback |
+| 0 | Non-Chinese | Not Chinese at all |
+| -100 | CHS detected | Definite Simplified Chinese (by title, code, description, or content) |
+
+### Modifiers
+
+| Modifier | Effect | Reason |
+|----------|--------|--------|
+| Forced subtitle | -50 penalty | Avoid forced/SDH tracks with only essential dialogue |
+| External subtitle file | +2 bonus | Prefer external .srt/.ass over embedded MKV tracks |
+
+### Content Analysis
+
+When a Chinese subtitle has no clear CHT/CHS indicator in its metadata, the tool downloads a sample of the subtitle text and counts Traditional vs Simplified character usage using 90 high-frequency character pairs (e.g., 們/们, 這/这, 會/会).
+
+- **>=70% Traditional** → CHT (score 85)
+- **<=30% Traditional** → CHS (score -100)
+- **30-70%** → ambiguous, triggers fallback
+- Skips image-based subtitles (PGS, VobSub)
+- Supports UTF-8, Big5, GB18030 encoding
+- Downloads at most 50KB per subtitle — fast and lightweight
+
+## Fallback Strategies
+
+| `--fallback` | Behavior |
+|---|---|
+| `chs` (default) | Accept Simplified Chinese — at least it's Chinese |
+| `english` | Fall back to English subtitles |
+| `skip` | Don't change — keep Plex's current setting |
+| `none` | Disable subtitles |
+
+## CLI Options
 
 ```
 Connection:
@@ -107,13 +141,13 @@ Connection:
 
 Scan:
   --scan-range DAYS       Scan items updated within N days (0 = full scan)
-  --fallback STRATEGY     When no CHT found: skip | english | chs | none
+  --fallback STRATEGY     When no CHT found: chs | english | skip | none (default: chs)
   --force                 Force overwrite existing subtitle selections
   --workers N             Parallel threads (default: 8)
 
 Schedule:
   --schedule              Run as a persistent service with cron scheduling
-  --cron EXPR             Cron expression (default: "0 3 * * *")
+  --cron EXPR             Cron expression (default: "0 3 * * 0", weekly Sun 3AM)
 
 Watch:
   --watch                 Enable real-time watcher via WebSocket
@@ -126,102 +160,88 @@ Output:
   -v, --verbose           Verbose output
 ```
 
-## Fallback Strategies / 找不到繁中時的策略
+## Watch Mode
 
-| `--fallback` | Behavior | 行為 |
-|---|---|---|
-| `skip` (default) | Don't change — keep Plex's current setting | 不動，保留原設定 |
-| `english` | Fall back to English subtitles | 退而求其次用英文字幕 |
-| `chs` | Accept Simplified Chinese | 接受簡體中文 |
-| `none` | Disable subtitles | 關閉字幕 |
+Watch mode uses Plex's WebSocket Alert Listener to detect media changes in real-time. When new media is added or updated, the watcher processes only the affected items — no full scan needed. **Does not require Plex Pass.**
 
-## How Detection Works / 偵測原理
-
-Each subtitle track receives a confidence score:
-
-| Score | Meaning |
-|---|---|
-| +100 | Definite CHT (title contains: 繁體, CHT, Traditional, BIG5, zh-TW...) |
-| +95 | CHT by language code (zh-tw, zh-hant) |
-| +90 | CHT by language description ("Traditional", "Taiwan", "Hong Kong") |
-| +10 | Unknown Chinese variant — triggers fallback |
-| 0 | Not Chinese |
-| -100 | Definite CHS (title contains: 简体, CHS, Simplified, zh-CN...) |
-
-Forced subtitles receive an additional -50 penalty.
-
-## Docker / Docker 使用
-
-### Build / 建置
-
-```bash
-docker build -t plexchtsubs .
-```
-
-### Setup / 設定
-
-Copy `config.example.yaml` to `config.yaml` in the same directory as `docker-compose.yml` and fill in your Plex URL and token.
-
-將 `config.example.yaml` 複製為 `config.yaml`（與 `docker-compose.yml` 同目錄），填入你的 Plex URL 和 token。
-
-### One-shot scan / 單次掃描
-
-```bash
-docker run --rm \
-  -v ./config.yaml:/app/config.yaml:ro \
-  plexchtsubs --dry-run --scan-range 30
-```
-
-### Service mode / 常駐排程
-
-```bash
-# Using docker-compose (recommended)
-docker compose up -d
-
-# View logs
-docker compose logs -f
-```
-
-Service mode (`--schedule`) runs the scan immediately on startup, then repeats on the cron schedule (default: daily 03:00). The real-time watcher is also enabled by default — it detects new/updated media via WebSocket and processes only the changed items.
-
-常駐模式（`--schedule`）啟動時立刻執行一次掃描，之後按照 cron 排程定期執行（預設每天凌晨 3 點）。同時預設啟用即時監控，透過 WebSocket 偵測新增/更新的媒體，只處理變更的項目。
-
-### Remote deployment / 遠端部署（NAS 等）
-
-```bash
-# On build machine
-docker build -t plexchtsubs .
-docker save plexchtsubs -o plexchtsubs.tar
-
-# Copy plexchtsubs.tar, docker-compose.yml, config.yaml to target machine, then:
-docker load -i plexchtsubs.tar
-docker compose up -d
-```
-
-## Watch Mode / 即時監控模式
-
-Watch mode uses Plex's WebSocket Alert Listener to detect media changes in real-time. When new media is added or existing media is updated (e.g., file replaced, subtitle added), the watcher processes only the affected items — no full scan needed. **Does not require Plex Pass.**
-
-即時監控模式使用 Plex 的 WebSocket Alert Listener 即時偵測媒體變更。當新增或更新媒體時（如替換檔案、新增字幕），監控器只處理受影響的項目，不需要全面掃描。**不需要 Plex Pass。**
+Events are debounced (default 5 seconds) to batch rapid changes — e.g., importing a full season triggers a single batch instead of per-episode processing.
 
 ```bash
 # Watch only (no cron)
-python run.py --watch
+python run.py --watch --dry-run
 
-# Schedule + watch (recommended for Docker, --watch is implicit)
+# Schedule + watch (recommended for persistent service)
+# --schedule automatically enables --watch unless --no-watch is specified
 python run.py --schedule
 
 # Schedule only, disable watcher
 python run.py --schedule --no-watch
 ```
 
-Watch mode requires `websocket-client`:
+Auto-reconnect: if the WebSocket connection drops, the watcher reconnects with exponential backoff (2s → 4s → 8s → ... up to 5 minutes).
+
+## Docker
+
+### One-shot scan
 
 ```bash
-pip install websocket-client
+docker compose run --rm plexchtsubs --dry-run
 ```
 
-## Attribution / 致謝
+### Service mode
+
+```bash
+# Start service (weekly cron scan + real-time watcher)
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+Service mode (`--schedule`) runs an initial scan on startup, then repeats on the cron schedule (default: weekly Sunday 03:00). The real-time watcher runs concurrently, processing changed items instantly.
+
+### Build from source
+
+```bash
+docker build -t plexchtsubs .
+```
+
+### Remote deployment (NAS, etc.)
+
+```bash
+# On build machine
+docker build -t plexchtsubs .
+docker save plexchtsubs -o plexchtsubs.tar
+
+# Copy plexchtsubs.tar, docker-compose.yml, config.yaml to target machine
+
+# On target machine
+sudo docker load < plexchtsubs.tar
+sudo docker compose up -d
+sudo docker compose logs -f
+```
+
+## Environment Variables
+
+All config options can be set via environment variables (useful for Docker):
+
+| Variable | Description |
+|----------|-------------|
+| `PLEX_URL` | Plex server URL |
+| `PLEX_TOKEN` | Plex authentication token |
+| `SCAN_RANGE` | Days to scan (0 = full) |
+| `FALLBACK` | Fallback strategy |
+| `WORKERS` | Parallel threads |
+| `DRY_RUN` | `true` for preview mode |
+| `SCHEDULE_ENABLED` | `true` for service mode |
+| `SCHEDULE_CRON` | Cron expression |
+| `WATCH_ENABLED` | `true` for real-time watcher |
+| `WATCH_DEBOUNCE` | Debounce seconds |
+
+## Attribution
 
 Inspired by [PlexPreferNonForcedSubs](https://github.com/RileyXX/PlexPreferNonForcedSubs) by RileyXX (MIT License).
 

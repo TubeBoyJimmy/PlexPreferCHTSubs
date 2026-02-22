@@ -30,7 +30,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     scan.add_argument(
         "--fallback", choices=VALID_FALLBACKS,
-        help="Strategy when no CHT subtitle found (default: skip)",
+        help="Strategy when no CHT subtitle found (default: chs)",
     )
     scan.add_argument("--force", action="store_true", default=None, help="Force overwrite existing selections")
     scan.add_argument("--workers", type=int, help="Number of parallel threads (default: 8)")
@@ -40,7 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--schedule", action="store_true", default=None,
         help="Run as a persistent service with cron scheduling (requires apscheduler)",
     )
-    sched.add_argument("--cron", help='Cron expression for schedule (default: "0 3 * * *")')
+    sched.add_argument("--cron", help='Cron expression for schedule (default: "0 3 * * 0", weekly Sun 3AM)')
 
     watch = p.add_argument_group("watch")
     watch.add_argument(
@@ -70,6 +70,8 @@ def _setup_logging(config) -> None:
     if config.log_file:
         handlers.append(logging.FileHandler(config.log_file, encoding="utf-8"))
     logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s", handlers=handlers)
+    # Suppress noisy HTTP debug logs from urllib3/requests
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
 def main(argv: list[str] | None = None) -> None:

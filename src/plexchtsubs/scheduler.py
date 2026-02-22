@@ -22,7 +22,7 @@ def _parse_cron(expr: str) -> dict:
     """Parse a standard 5-field cron expression into APScheduler kwargs.
 
     Format: minute hour day month day_of_week
-    Example: '0 3 * * *' → every day at 03:00
+    Example: '0 3 * * 0' → every Sunday at 03:00
     """
     parts = expr.strip().split()
     if len(parts) != 5:
@@ -113,5 +113,11 @@ def run_service(config: Config) -> None:
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    # Block main thread until shutdown signal
-    stop_event.wait()
+    # Block main thread until shutdown signal.
+    # Use a polling loop because on Windows, Event.wait() without timeout
+    # cannot be interrupted by signals (Ctrl+C).
+    try:
+        while not stop_event.is_set():
+            stop_event.wait(timeout=1.0)
+    except KeyboardInterrupt:
+        _shutdown(signal.SIGINT, None)

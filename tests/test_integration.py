@@ -24,7 +24,7 @@ class TestConfigMerge:
         with patch("plexchtsubs.config._prompt_token", return_value="fake-token"):
             cfg = load_config(config_path=Path("/nonexistent/config.yaml"))
         assert cfg.plex_url == "http://localhost:32400"
-        assert cfg.fallback == "skip"
+        assert cfg.fallback == "chs"
         assert cfg.scan_range_days == 30
         assert cfg.workers == 8
         assert cfg.dry_run is False
@@ -175,6 +175,72 @@ class TestRealWorldScenarios:
         assert result is not None
         assert result.info.stream_id == 2
         assert result.score == 100
+
+
+# ===================================================================
+# 2b. _process_item early-exit for no subtitle streams
+# ===================================================================
+
+class TestProcessItemNoSubs:
+    """Items with zero subtitle streams should be skipped silently."""
+
+    def test_no_subtitle_streams_skips(self):
+        """A video with no subtitle streams (burned-in only) should skip."""
+        from unittest.mock import MagicMock
+        from plexchtsubs.scanner import _process_item
+        from plexchtsubs.display import ScanStats
+
+        plex = MagicMock()
+        video = MagicMock()
+        video.title = "Some Movie"
+        video.subtitleStreams.return_value = []
+        plex.fetchItem.return_value = video
+
+        config = MagicMock()
+        config.fallback = "skip"
+        stats = ScanStats()
+        stats_lock = __import__("threading").Lock()
+
+        _process_item(plex, 12345, config, stats, stats_lock)
+        assert stats.total == 1
+        assert stats.skipped == 1
+        assert stats.changed == 0
+
+    def test_with_subtitle_streams_processes(self):
+        """A video WITH subtitle streams should proceed normally (not early-exit)."""
+        from unittest.mock import MagicMock, PropertyMock
+        from plexchtsubs.scanner import _process_item
+        from plexchtsubs.display import ScanStats
+
+        plex = MagicMock()
+        video = MagicMock()
+        video.title = "Anime Movie"
+        video.type = "movie"
+        video.year = 2024
+
+        # Simulate one CHT subtitle stream
+        stream = MagicMock()
+        stream.id = 1
+        stream.title = "繁體中文"
+        stream.languageCode = "chi"
+        stream.language = "Chinese"
+        stream.forced = False
+        stream.selected = True
+        stream.codec = "srt"
+        video.subtitleStreams.return_value = [stream]
+        plex.fetchItem.return_value = video
+
+        config = MagicMock()
+        config.fallback = "skip"
+        config.force_overwrite = False
+        config.dry_run = False
+        stats = ScanStats()
+        stats_lock = __import__("threading").Lock()
+
+        _process_item(plex, 12345, config, stats, stats_lock)
+        # Should have processed (not early-exited) — "already set" counts as total+skipped
+        assert stats.total == 1
+        assert stats.skipped == 1  # already selected, not forced
 
 
 # ===================================================================

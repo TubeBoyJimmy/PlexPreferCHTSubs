@@ -8,7 +8,7 @@ plex:
 
 scan:
   range_days: 30                    # Scan items updated within N days. null = full scan.
-  fallback: skip                    # When no CHT found: skip | english | chs | none
+  fallback: chs                     # When no CHT found: chs | english | skip | none
   force_overwrite: false            # Re-evaluate items that already have a subtitle set
 
 workers: 8                          # Number of parallel threads
@@ -16,7 +16,7 @@ workers: 8                          # Number of parallel threads
 # Schedule mode — run as a persistent service instead of one-shot
 schedule:
   enabled: false
-  cron: "0 3 * * *"                 # Standard 5-field cron: minute hour day month weekday
+  cron: "0 3 * * 0"                 # Weekly Sunday 03:00 (watcher handles real-time updates)
 
 # Watch mode — real-time WebSocket listener for media changes (no Plex Pass required)
 watch:

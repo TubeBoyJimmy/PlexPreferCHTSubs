@@ -1,4 +1,5 @@
-"""Tests for PlexWatcher (event filtering, debounce, reconnect) and _put_with_retry."""
+"""Tests for PlexWatcher (event filtering, debounce, reconnect), _put_with_retry,
+and _fetch_subtitle_content."""
 
 from __future__ import annotations
 
@@ -10,7 +11,8 @@ import pytest
 import requests
 
 from plexchtsubs.config import Config
-from plexchtsubs.scanner import _put_with_retry
+from plexchtsubs.detector import SubtitleInfo
+from plexchtsubs.scanner import _put_with_retry, _fetch_subtitle_content
 from plexchtsubs.watcher import PlexWatcher, _STATE_DONE, _TYPE_MOVIE, _TYPE_EPISODE
 
 
@@ -238,3 +240,55 @@ class TestPutWithRetry:
             with pytest.raises(requests.ConnectionError):
                 _put_with_retry("http://test", {}, max_retries=2, base_delay=0.01)
             assert mock_put.call_count == 3  # initial + 2 retries
+
+
+# ---------------------------------------------------------------------------
+# _fetch_subtitle_content
+# ---------------------------------------------------------------------------
+
+
+class TestFetchSubtitleContent:
+
+    def test_returns_text_on_success(self):
+        info = SubtitleInfo(stream_id=1, title=None, language_code="chi",
+                            language="Chinese", key="/library/streams/123", codec="ass")
+        with patch("plexchtsubs.scanner.requests.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200, content="你好世界".encode("utf-8"),
+            )
+            mock_get.return_value.raise_for_status = MagicMock()
+            result = _fetch_subtitle_content("http://plex:32400", "tok", info)
+        assert result is not None
+        assert "你好" in result
+
+    def test_returns_none_when_no_key(self):
+        info = SubtitleInfo(stream_id=1, title=None, language_code="chi",
+                            language="Chinese", key=None, codec="ass")
+        result = _fetch_subtitle_content("http://plex:32400", "tok", info)
+        assert result is None
+
+    def test_returns_none_for_image_codec(self):
+        info = SubtitleInfo(stream_id=1, title=None, language_code="chi",
+                            language="Chinese", key="/library/streams/1", codec="pgs")
+        result = _fetch_subtitle_content("http://plex:32400", "tok", info)
+        assert result is None
+
+    def test_returns_none_on_network_error(self):
+        info = SubtitleInfo(stream_id=1, title=None, language_code="chi",
+                            language="Chinese", key="/library/streams/1", codec="srt")
+        with patch("plexchtsubs.scanner.requests.get", side_effect=requests.ConnectionError):
+            result = _fetch_subtitle_content("http://plex:32400", "tok", info)
+        assert result is None
+
+    def test_decodes_big5(self):
+        info = SubtitleInfo(stream_id=1, title=None, language_code="chi",
+                            language="Chinese", key="/library/streams/1", codec="srt")
+        text = "你好世界"
+        with patch("plexchtsubs.scanner.requests.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200, content=text.encode("big5"),
+            )
+            mock_get.return_value.raise_for_status = MagicMock()
+            result = _fetch_subtitle_content("http://plex:32400", "tok", info)
+        assert result is not None
+        assert "你好" in result

@@ -17,6 +17,7 @@ from plexchtsubs.detector import (
     SubtitleCategory,
     SubtitleInfo,
     SubtitleResult,
+    classify,
     select_best,
 )
 from plexchtsubs.display import (
@@ -86,7 +87,46 @@ def _to_subtitle_info(stream) -> SubtitleInfo:
         forced=getattr(stream, "forced", False),
         selected=getattr(stream, "selected", False),
         codec=getattr(stream, "codec", None),
+        key=getattr(stream, "key", None),
     )
+
+
+# ---------------------------------------------------------------------------
+# Content analysis helpers
+# ---------------------------------------------------------------------------
+
+# Image-based subtitle codecs — cannot be text-analyzed.
+_IMAGE_CODECS = frozenset({"pgs", "hdmv_pgs_subtitle", "vobsub", "dvd_subtitle", "dvdsub"})
+
+
+def _fetch_subtitle_content(
+    plex_url: str, plex_token: str, info: SubtitleInfo, max_bytes: int = 50_000,
+) -> Optional[str]:
+    """Download subtitle text content for character-frequency analysis.
+
+    Returns decoded text, or None if the stream has no download key,
+    is image-based, or the download fails.
+    """
+    if not info.key:
+        return None
+    if info.codec and info.codec.lower() in _IMAGE_CODECS:
+        return None
+
+    url = f"{plex_url}{info.key}"
+    headers = {"X-Plex-Token": plex_token}
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        raw = resp.content[:max_bytes]
+        for enc in ("utf-8", "utf-8-sig", "big5", "gb18030"):
+            try:
+                return raw.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return None
+    except Exception as e:
+        logger.debug("Failed to fetch subtitle content for stream %d: %s", info.stream_id, e)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -110,16 +150,36 @@ def _process_item(
             stats.errors += 1
         return
 
-    streams = [_to_subtitle_info(s) for s in video.subtitleStreams()]
-    result = select_best(streams, fallback=config.fallback)
-
-    # Build display info
+    # Build display title early (used in both skip and process paths)
     if video.type == "episode":
         display_title = f"{video.grandparentTitle} S{video.seasonNumber:02d}E{video.index:02d}"
         year_str = str(video.year) if video.year else ""
     else:
         display_title = str(video.title)
         year_str = str(video.year) if video.year else ""
+
+    streams = [_to_subtitle_info(s) for s in video.subtitleStreams()]
+
+    # No subtitle streams at all (e.g., burned-in / hardcoded subs only) → skip
+    if not streams:
+        logger.debug("No subtitle streams: %s", display_title)
+        with stats_lock:
+            stats.total += 1
+            stats.skipped += 1
+        return
+
+    # Content analysis: fetch subtitle text for unknown Chinese streams
+    content_map: dict[int, str] = {}
+    for s in streams:
+        quick = classify(s)
+        if quick.category == SubtitleCategory.UNKNOWN_ZH and s.key:
+            text = _fetch_subtitle_content(config.plex_url, config.plex_token, s)
+            if text:
+                content_map[s.stream_id] = text
+                logger.debug("Content analysis for %s stream %d: %d bytes",
+                             display_title, s.stream_id, len(text))
+
+    result = select_best(streams, fallback=config.fallback, content_map=content_map)
 
     # Case 1: No result (fallback=skip or no matching subtitle at all)
     if result is None:

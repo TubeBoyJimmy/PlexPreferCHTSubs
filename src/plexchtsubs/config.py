@@ -25,7 +25,7 @@ _DEFAULTS = {
     "plex_url": "http://localhost:32400",
     "plex_token": None,
     "scan_range_days": 30,
-    "fallback": "skip",
+    "fallback": "chs",
     "force_overwrite": False,
     "workers": 8,
     "dry_run": False,
@@ -49,7 +49,7 @@ class Config:
     log_file: Optional[str] = None
     # Schedule (Phase 2)
     schedule_enabled: bool = False
-    schedule_cron: str = "0 3 * * *"  # default: daily at 3 AM
+    schedule_cron: str = "0 3 * * 0"  # default: weekly Sunday 3 AM
     # Watch mode (real-time WebSocket listener)
     watch_enabled: bool = False
     watch_debounce: float = 5.0  # seconds to batch events before processing

@@ -5,6 +5,7 @@ from plexchtsubs.detector import (
     SubtitleCategory,
     SubtitleInfo,
     SubtitleResult,
+    analyze_subtitle_text,
     classify,
     select_best,
 )
@@ -310,3 +311,184 @@ class TestSelectBestFallback:
         result = select_best(streams, fallback="english")
         assert result is not None
         assert result.category == SubtitleCategory.ENGLISH
+
+
+# ===================================================================
+# analyze_subtitle_text() — Character frequency analysis
+# ===================================================================
+
+class TestAnalyzeSubtitleText:
+
+    def test_traditional_text(self):
+        text = "你好，這是一個測試。我們今天要學習的課題是關於電影的歷史。請問你覺得這部電影怎麼樣？我認為導演的選擇很專業。"
+        result = analyze_subtitle_text(text)
+        assert result is not None
+        cat, score = result
+        assert cat == SubtitleCategory.CHT
+        assert score == 85
+
+    def test_simplified_text(self):
+        text = "你好，这是一个测试。我们今天要学习的课题是关于电影的历史。请问你觉得这部电影怎么样？我认为导演的选择很专业。"
+        result = analyze_subtitle_text(text)
+        assert result is not None
+        cat, score = result
+        assert cat == SubtitleCategory.CHS
+        assert score == -100
+
+    def test_insufficient_data(self):
+        text = "Hello World"  # no Chinese chars at all
+        assert analyze_subtitle_text(text) is None
+
+    def test_too_few_distinguishing_chars(self):
+        text = "你好嗎"  # common chars, no distinguishing ones
+        assert analyze_subtitle_text(text) is None
+
+    def test_ambiguous_mix(self):
+        """50/50 mix of Traditional and Simplified → ambiguous."""
+        text = "這們時從開" + "这们时从开"  # 5 trad + 5 simp
+        assert analyze_subtitle_text(text) is None
+
+    def test_mostly_traditional_with_noise(self):
+        """80% trad chars should still classify as CHT."""
+        text = "這們時從開長問進動現" + "这们"  # 10 trad + 2 simp
+        result = analyze_subtitle_text(text)
+        assert result is not None
+        assert result[0] == SubtitleCategory.CHT
+
+
+# ===================================================================
+# classify() with content analysis
+# ===================================================================
+
+class TestClassifyWithContent:
+
+    def test_unknown_zh_with_cht_content(self):
+        """UNKNOWN_ZH + Traditional content → CHT 85."""
+        content = "你好，這是一個測試。我們今天要學習的課題。"
+        result = classify(
+            _sub(language_code="chi", language="Chinese"),
+            content=content,
+        )
+        assert result.category == SubtitleCategory.CHT
+        assert result.score == 85
+
+    def test_unknown_zh_with_chs_content(self):
+        """UNKNOWN_ZH + Simplified content → CHS -100."""
+        content = "你好，这是一个测试。我们今天要学习的课题。"
+        result = classify(
+            _sub(language_code="chi", language="Chinese"),
+            content=content,
+        )
+        assert result.category == SubtitleCategory.CHS
+        assert result.score == -100
+
+    def test_unknown_zh_with_insufficient_content(self):
+        """UNKNOWN_ZH + too little content → stays UNKNOWN_ZH 10."""
+        result = classify(
+            _sub(language_code="chi", language="Chinese"),
+            content="Hello",
+        )
+        assert result.category == SubtitleCategory.UNKNOWN_ZH
+        assert result.score == 10
+
+    def test_content_ignored_when_not_unknown_zh(self):
+        """Content is only used for UNKNOWN_ZH — CHT by title stays 100."""
+        content = "这是简体中文内容这们时从开长问进动现"
+        result = classify(
+            _sub(title="繁體中文", language_code="chi"),
+            content=content,
+        )
+        assert result.category == SubtitleCategory.CHT
+        assert result.score == 100  # title match, content ignored
+
+    def test_forced_penalty_with_content_analysis(self):
+        """Forced penalty applies on top of content analysis score."""
+        content = "你好，這是一個測試。我們今天要學習的課題。"
+        result = classify(
+            _sub(language_code="chi", language="Chinese", forced=True),
+            content=content,
+        )
+        assert result.category == SubtitleCategory.CHT
+        assert result.score == 35  # 85 - 50
+
+
+# ===================================================================
+# select_best() with content_map
+# ===================================================================
+
+class TestSelectBestWithContentMap:
+
+    def test_content_map_promotes_unknown_to_cht(self):
+        """UNKNOWN_ZH stream gets promoted to CHT via content analysis."""
+        streams = [
+            _sub(stream_id=1, language_code="chi", language="Chinese"),
+            _sub(stream_id=2, language_code="eng", language="English"),
+        ]
+        content_map = {
+            1: "你好，這是一個測試。我們今天要學習的課題是關於電影的歷史。",
+        }
+        result = select_best(streams, fallback="skip", content_map=content_map)
+        assert result is not None
+        assert result.info.stream_id == 1
+        assert result.category == SubtitleCategory.CHT
+        assert result.score == 85
+
+    def test_content_map_detects_chs_triggers_fallback(self):
+        """UNKNOWN_ZH detected as CHS via content → fallback to English."""
+        streams = [
+            _sub(stream_id=1, language_code="chi", language="Chinese"),
+            _sub(stream_id=2, language_code="eng", language="English"),
+        ]
+        content_map = {
+            1: "你好，这是一个测试。我们今天要学习的课题是关于电影的历史。",
+        }
+        result = select_best(streams, fallback="english", content_map=content_map)
+        assert result is not None
+        assert result.category == SubtitleCategory.ENGLISH
+        assert result.info.stream_id == 2
+
+    def test_no_content_map_falls_back(self):
+        """Without content_map, UNKNOWN_ZH triggers fallback as before."""
+        streams = [
+            _sub(stream_id=1, language_code="chi", language="Chinese"),
+            _sub(stream_id=2, language_code="eng", language="English"),
+        ]
+        result = select_best(streams, fallback="english")
+        assert result is not None
+        assert result.category == SubtitleCategory.ENGLISH
+
+
+# ===================================================================
+# External subtitle bonus (tiebreaker)
+# ===================================================================
+
+class TestExternalBonus:
+
+    def test_external_gets_bonus(self):
+        """Subtitle with key (external) gets +2 bonus."""
+        embedded = classify(SubtitleInfo(
+            stream_id=1, title="繁體中文", language_code="chi", language="Chinese",
+        ))
+        external = classify(SubtitleInfo(
+            stream_id=2, title="繁體中文", language_code="chi", language="Chinese",
+            key="/library/streams/123",
+        ))
+        assert external.score == embedded.score + 2
+
+    def test_external_wins_tiebreaker(self):
+        """When both embedded and external are CHT, external is preferred."""
+        cht_content = "你好，這是一個測試。我們今天要學習的課題是關於電影的歷史。"
+        streams = [
+            SubtitleInfo(stream_id=1, title=None, language_code="chi",
+                         language="Chinese"),  # embedded, no key
+            SubtitleInfo(stream_id=2, title=None, language_code="chi",
+                         language="Chinese", key="/library/streams/99"),  # external
+        ]
+        content_map = {
+            1: cht_content,
+            2: cht_content,
+        }
+        result = select_best(streams, fallback="skip", content_map=content_map)
+        assert result is not None
+        assert result.info.stream_id == 2  # external wins
+        assert result.score == 87  # 85 + 2
