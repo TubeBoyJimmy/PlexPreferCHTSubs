@@ -1,0 +1,14 @@
+# PlexPreferCHTSubs configuration
+# Copy this file to config.yaml and fill in your values.
+# config.yaml is git-ignored and will not be committed.
+
+plex:
+  url: "http://localhost:32400"
+  token: "your-plex-token-here"     # https://www.plexopedia.com/plex-media-server/general/plex-token/
+
+scan:
+  range_days: 30                    # Scan items updated within N days. null = full scan.
+  fallback: skip                    # When no CHT found: skip | english | chs | none
+  force_overwrite: false            # Re-evaluate items that already have a subtitle set
+
+workers: 8                          # Number of parallel threads
